@@ -16,10 +16,10 @@ public class ConfigHelper {
 
     private static ConfigHelper instance;
     private Config conf;
-    private static ClassLoader classLoader;
+    private static ClassLoader classLoader = ConfigHelper.class.getClassLoader();
 
-    protected ConfigHelper() {
-        classLoader = getClass().getClassLoader();
+    public ConfigHelper() {
+
         conf = ConfigFactory.load(classLoader, System
                 .getProperty("project.properties", "project.properties"));
     }

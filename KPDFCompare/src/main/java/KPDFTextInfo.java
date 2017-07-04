@@ -4,6 +4,8 @@
 import org.apache.pdfbox.pdmodel.graphics.color.PDColor;
 import org.apache.pdfbox.pdmodel.graphics.state.RenderingMode;
 
+import java.util.HashMap;
+
 /**
  * Created by makri on 27/06/2017.
  */
@@ -19,6 +21,16 @@ public class KPDFTextInfo {
     private float width;
     private float height;
     private String value;
+
+    public HashMap<Integer, GraphicsState> getGraphicsStateHashMap() {
+        return graphicsStateHashMap;
+    }
+
+    public void setGraphicsStateHashMap(Integer index, GraphicsState graphicsState) {
+        this.graphicsStateHashMap.put(index, graphicsState);
+    }
+
+    private HashMap<Integer,GraphicsState> graphicsStateHashMap = new HashMap<Integer, GraphicsState>();
 
     public PDColor getStrokingColor() {
         return strokingColor;
