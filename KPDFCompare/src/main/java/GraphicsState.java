@@ -74,32 +74,13 @@ public class GraphicsState {
         GraphicsState rhs = (GraphicsState) obj;
         try {
             return new EqualsBuilder().
-                    // if deriving: appendSuper(super.equals(obj)).
-                    // append(strokingColor.getColorSpace(), rhs.strokingColor.getColorSpace()).
-                            append(getRenderingMode().toString(), rhs.getRenderingMode().toString()).
-                            append(getStrokingColor().toRGB(), rhs.getStrokingColor().toRGB()).
-                    // append(nonStrokingColor.getColorSpace(), rhs.nonStrokingColor.getColorSpace()).
-                            append(getNonStrokingColor().toRGB(), rhs.getNonStrokingColor().toRGB()).
-                            isEquals();
-        } catch (Exception e) {
-           // e.printStackTrace();
-           // System.out.println(((GraphicsState) obj).getRenderingMode());
-            boolean res = true;
-            try {
-
-                if (((GraphicsState) obj).getStrokingColor().toRGB() != ((GraphicsState) rhs).getStrokingColor().toRGB())
-                    res = false;
-
-                if (((GraphicsState) obj).getNonStrokingColor().toRGB() != ((GraphicsState) rhs).getNonStrokingColor().toRGB())
-                    res = false;
-                if (((GraphicsState) obj).getRenderingMode().name().equals(((GraphicsState) rhs).getRenderingMode().name()))
-                    res = false;
-
-            } catch (IOException e1) {
-                e1.printStackTrace();
-            }
-
-            return res;
+                    append(getRenderingMode().toString(), rhs.getRenderingMode().toString()).
+                    append(getStrokingColor().toRGB(), rhs.getStrokingColor().toRGB()).
+                    append(getNonStrokingColor().toRGB(), rhs.getNonStrokingColor().toRGB()).
+                    isEquals();
+        } catch (IOException e) {
+            e.printStackTrace();
+            return false;
         }
     }
 }

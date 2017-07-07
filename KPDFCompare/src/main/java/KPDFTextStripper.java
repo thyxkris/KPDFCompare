@@ -14,11 +14,7 @@ import java.util.Map;
 
 public class KPDFTextStripper extends PDFTextStripper {
     private List<KPDFTextInfo> pdfTextInfos = new ArrayList<KPDFTextInfo>();
-    private List<KPDFTextInfo> pdfTextInfosColor = new ArrayList<KPDFTextInfo>();
-    private List<KPDFTextInfo> pdfTextInfosColor2 = new ArrayList<KPDFTextInfo>();
-    private List<KFilter> filters = new ArrayList<KFilter>();
-    private Map<GraphicsState, String> graphicsStates = new HashMap<GraphicsState, String>();
-    List<GraphicsState> graphicsStateList = new ArrayList<GraphicsState>();
+    private List<GraphicsState> graphicsStateList = new ArrayList<GraphicsState>();
     private PDDocument pdDoc;
     private int cursor = 0;
 
@@ -37,23 +33,23 @@ public class KPDFTextStripper extends PDFTextStripper {
         addOperator(new SetNonStrokingColorN());
     }
 
-    protected int findTextLinesByFilter(KFilter filter) {
+    protected int findTextLinesByFilter(KPDFTextInfo filter) {
 
         for (int i = 0; i < getPdfTextInfos().size(); i++) {
             boolean found = true;
             if ((null != filter.getFont()) && !getPdfTextInfos().get(i).getFont().equals(filter.getFont())) {
                 found = false;
             }
-            if ((null != filter.getFontSize()) && !(getPdfTextInfos().get(i).getFontSize() == Float.valueOf(filter.getFontSize()))) {
+            if (!(getPdfTextInfos().get(i).getFontSize() == filter.getFontSize())) {
                 found = false;
             }
             if ((null != filter.getValue()) && !getPdfTextInfos().get(i).getValue().equals(filter.getValue())) {
                 found = false;
             }
-            if ((null != filter.getStartX()) && !(String.valueOf(getPdfTextInfos().get(i).getStartX()).equals(filter.getStartX()))) {
+            if (!(String.valueOf(getPdfTextInfos().get(i).getStartX()).equals(filter.getStartX()))) {
                 found = false;
             }
-            if ((null != filter.getStartY()) && !(String.valueOf(getPdfTextInfos().get(i).getStartY()).equals(filter.getStartY()))) {
+            if (!(String.valueOf(getPdfTextInfos().get(i).getStartY()).equals(filter.getStartY()))) {
                 found = false;
             }
 
@@ -64,28 +60,12 @@ public class KPDFTextStripper extends PDFTextStripper {
         return -1;
     }
 
-    public Map<GraphicsState, String> getGraphicsStates() {
-        return graphicsStates;
-    }
-
-    public void setGraphicsStates(Map<GraphicsState, String> graphicsStates) {
-        this.graphicsStates = graphicsStates;
-    }
-
     public List<KPDFTextInfo> getPdfTextInfos() {
         return pdfTextInfos.subList(0, pdfTextInfos.size());
     }
 
     public void setPdfTextInfos(List<KPDFTextInfo> pdfTextInfos) {
         this.pdfTextInfos = pdfTextInfos;
-    }
-
-    public List<KFilter> getFilters() {
-        return filters;
-    }
-
-    public void setFilters(List<KFilter> filters) {
-        this.filters = filters;
     }
 
     public PDDocument getPdDoc() {
@@ -104,7 +84,6 @@ public class KPDFTextStripper extends PDFTextStripper {
 
     @Override
     protected void writeLineSeparator() throws IOException {
-        //  startOfLine = true;
         super.writeLineSeparator();
     }
 
@@ -137,6 +116,8 @@ public class KPDFTextStripper extends PDFTextStripper {
         pti.setStartY(startY);
         pti.setValue(text);
 
+        pti.setPageNumber(this.getCurrentPageNo());
+
 
         GraphicsState currentGS = new GraphicsState();
         GraphicsState lastGS = null;
@@ -167,66 +148,18 @@ public class KPDFTextStripper extends PDFTextStripper {
 
         PDColor strokingColor = getGraphicsState().getStrokingColor();
         PDColor nonStrokingColor = getGraphicsState().getNonStrokingColor();
-        String unicode = text.getUnicode();
         RenderingMode renderingMode = getGraphicsState().getTextState().getRenderingMode();
-/*        System.out.println("Unicode:            " + unicode);
-        System.out.println("Rendering mode:     " + renderingMode);
-        System.out.println("Stroking color:     " + strokingColor);
-        System.out.println("Non-Stroking color: " + nonStrokingColor);
-        System.out.println();*/
 
         GraphicsState graphicsState = new GraphicsState();
-
         graphicsState.setNonStrokingColor(nonStrokingColor);
-
         graphicsState.setRenderingMode(renderingMode);
-
         graphicsState.setStrokingColor(strokingColor);
         graphicsState.setValue(text.toString());
-        //  graphicsState.setUnicode(unicode);
-
-        GraphicsState lastGraphicsState = new GraphicsState();
-        if (graphicsStateList == null || graphicsStateList.size() == 0) {
-            lastGraphicsState = null;
-        } else {
-            lastGraphicsState = this.graphicsStateList.get(graphicsStateList.size() - 1);
-        }
-        GraphicsState currentGraphicsState = graphicsState;
-
         //debug
         graphicsState.setValue(text.getUnicode());
         graphicsStateList.add(graphicsState);
 
-      /*  if (!currentGraphicsState.equals(lastGraphicsState)) {
-            //it means the graphic state now has changed, put a new graphicState in the list
-            this.graphicsStateList.add(currentGraphicsState);
 
-        } else {
-            // just add the new charactor
-            String s = graphicsStates.get(graphicsState);
-            //graphicsStates.put(graphicsState, s + text.toString());
-            this.graphicsStateList.get(graphicsStateList.size() - 1).setValue(s + text.toString());
-            //KPDFTextInfo kpdfTextInfo = new KPDFTextInfo();
-            //kpdfTextInfo.setValue(s);
-            //kpdfTextInfo.setRenderingMode();
-        }*/
-
-//        if ((graphicsStates == null) || (graphicsStates.size() == 0) || !graphicsStates.containsKey(graphicsState)) {
-//            graphicsStates.put(graphicsState, text.toString());
-//        } else {
-//            //check if exists
-//
-//
-//            String s = graphicsStates.get(graphicsState);
-//            graphicsStates.put(graphicsState, s + text.toString());
-//
-//        }
-        // See the PrintTextLocations for more attributes
-    }
-
-
-    public List<KPDFTextInfo> getPdfTextInfosColor() {
-        return pdfTextInfosColor;
     }
 
     public List<GraphicsState> getGraphicsStateList() {

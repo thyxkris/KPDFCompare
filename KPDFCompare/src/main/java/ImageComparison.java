@@ -11,6 +11,8 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.HashMap;
 
+////https://github.com/tholewebgods/image-comparison
+
 public class ImageComparison {
 
     private BufferedImage imgOut = null;
