@@ -4,22 +4,25 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.pdfbox.cos.COSDocument;
-import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.io.RandomAccessFile;
 import org.apache.pdfbox.pdfparser.PDFParser;
-import org.apache.pdfbox.pdmodel.*;
-import org.apache.pdfbox.pdmodel.graphics.PDXObject;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.rendering.PDFRenderer;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 
 /**
@@ -27,495 +30,623 @@ import java.util.List;
  */
 public class KPDFCompare {
 
+    final private String DIFFERENCE_IN_COLOR_RENDERING_MODE = "Color and Rendering Mode difference caught";
+    final private String DifferenceInTextContent = "unexpected Text content found";
+    final private String DifferenceInTextTolerancePossible = "Text differ but potential adjustment and tolerance";
+    final private String DifferenceInTextNOWayTolerance = "Texts differ too much, NO adjustment or tolerance potential";
 
-    List<KFilter> linesDifferentInAcutalPDF = new ArrayList<KFilter>();
-    List<KFilter> linesDifferentInExpectedPDF = new ArrayList<KFilter>();
+    private List<TextDifference> TextDifferencesBeforeProcessed = null;
+    private List<TextDifference> TextDifferencesInColorRenderingMode = null;
+    private List<TextDifference> TextDifferencesInCoordinateAlignment = null;
+    private List<TextDifference> TextDifferencesInCoordinateDeviation = null;
+    private List<KPDFTextInfo> filtersForVisualComparison = null;
+    private List<KPDFTextInfo> filtersForTextComparison = null;
+    private KPDFTextStripper kpdfTextStripperExpected = null;
+    private KPDFTextStripper kpdfTextStripperActual = null;
+    private PDDocument pdDocExpected = null;
+    private PDDocument pdDocActual = null;
 
-    String workingDirectory = ConfigHelper.getTestResourcesFolderPath();
+    private boolean isTextTolerant = false;
+
+    private float thresholdStartX = 0.03f;
+    private float thresholdHeight = 0;
+    private float thresholdStartY = 0;
+    private float thresholdWidth = 0.2f;
+    private String visualCompareMethod = "fuzzy";
+    private String workingDirectory = ConfigHelper.getTestResourcesFolderPath();
     private Logger logger = LogManager.getLogger();
-    private HashMap<String, Integer> comparisonResult = new HashMap<String, Integer>();
+    private boolean visualComparisonWithFilters = true;
+    private List<TextDifference> TextDifferencesInTextContent = new ArrayList<TextDifference>();
 
-    public KPDFCompare() {
+
+    public KPDFCompare(PDDocument pdDocExpected, PDDocument pdDocActual) throws IOException {
+
+        kpdfTextStripperExpected = new KPDFTextStripper();
+        kpdfTextStripperExpected.getText(pdDocActual);
+        kpdfTextStripperActual = new KPDFTextStripper();
+        kpdfTextStripperActual.getText(pdDocExpected);
     }
 
-    public boolean compareTwoImages(File fileOne, File fileTwo) {
-        Boolean isTrue = true;
-        try {
+    public KPDFCompare(String pdfExpected, String pdfActual) throws IOException {
 
+        this.pdDocExpected = this.getPDDocument(pdfExpected);
+        this.pdDocActual = this.getPDDocument(pdfActual);
 
-            Image imgOne = ImageIO.read(fileOne);
-            Image imgTwo = ImageIO.read(fileTwo);
-            BufferedImage bufImgOne = ImageIO.read(fileOne);
-            BufferedImage bufImgTwo = ImageIO.read(fileTwo);
+    }
+    public KPDFCompare( ) throws IOException {
 
-            int imgOneHt = bufImgOne.getHeight();
-            int imgTwoHt = bufImgTwo.getHeight();
-            int imgOneWt = bufImgOne.getWidth();
-            int imgTwoWt = bufImgTwo.getWidth();
-            if (imgOneHt != imgTwoHt || (imgOneWt != imgTwoWt)) {
-                System.out.println(" size are not equal ");
-                isTrue = false;
-            }
-            for (int x = 0; x < imgOneWt; x++) {
-                for (int y = 0; y < imgOneHt; y++) {
-                    if (bufImgOne.getRGB(x, y) != bufImgTwo.getRGB(x, y)) {
-                        System.out.println(" size are not equal ");
-                        isTrue = false;
-                        bufImgOne.setRGB(x, y, 100);
-                        // break;
-                    }
-                }
-            }
-            File outputfile = new File(fileOne.getPath() + "result.png");
-            ImageIO.write(bufImgOne, "png", outputfile);
-        } catch (IOException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-        }
-        return isTrue;
     }
 
-    public HashMap<String, Integer> comparePdfByTextContent(PDDocument pdDocExpected, PDDocument pdDocActual, List<KFilter> filters) throws IOException {
-
-        KPDFTextStripper actual = new KPDFTextStripper();
-        actual.getText(pdDocActual);
-        KPDFTextStripper expected = new KPDFTextStripper();
-        expected.getText(pdDocExpected);
-
-        return comparePdfByTextContent(expected, actual, filters, true, 0.03f, 0, 0, 0);
+    public List<TextDifference> getTextDifferencesInTextContent() {
+        return TextDifferencesInTextContent;
     }
 
-    public HashMap<String, Integer> comparePdfByTextContent(KPDFTextStripper expected, KPDFTextStripper actual, List<KFilter> filters) throws IOException {
-
-
-        return comparePdfByTextContent(expected, actual, filters, true, 0.03f, 0, 0.01f, 0);
+    public List<TextDifference> getTextDifferencesBeforeProcessed() {
+        return TextDifferencesBeforeProcessed;
     }
 
-    public HashMap<String, Integer> comparePdfByTextContent(KPDFTextStripper expected, KPDFTextStripper actual, List<KFilter> filters, boolean isTolerant, float deviationStartX, float deviationStartY, float deviationWidth, float deviationHeight) throws IOException {
+    public List<TextDifference> getTextDifferencesInColorRenderingMode() {
+        return TextDifferencesInColorRenderingMode;
+    }
+
+    public List<TextDifference> getTextDifferencesInCoordinateAlignment() {
+        return TextDifferencesInCoordinateAlignment;
+    }
+
+    public List<TextDifference> getTextDifferencesInCoordinateDeviation() {
+        return TextDifferencesInCoordinateDeviation;
+    }
 
 
-        int differenceCount = 0;
-        int countHeightNotSame = 0;
-        int countWidthNotSame = 0;
-        int countStartXNotSame = 0;
-        int countStartYNotSame = 0;
-        int countFontNotSame = 0;
-        int countFontSizeNotSame = 0;
-        int countValueNotSame = 0;
-        int countStrokingColorNotSame = 0;
-        int countNonStrokingColorNotSame = 0;
-        int countRenderingModeNotSame = 0;
+    public float getThresholdStartX() {
+        return thresholdStartX;
 
-        if (Math.abs(expected.getPdfTextInfos().size() - actual.getPdfTextInfos().size()) > 0) {
-            comparisonResult.put("the defference in conent Lines is ", Math.abs(expected.getPdfTextInfos().size() - actual.getPdfTextInfos().size()));
-            logger.info("comparison stops since the difference is too apparent");
-            return comparisonResult;
-        }
+    }
+
+    public KPDFCompare setThresholdStartX(float thresholdStartX) {
+        this.thresholdStartX = thresholdStartX;
+        return this;
+    }
+
+    public float getThresholdHeight() {
+        return thresholdHeight;
+    }
+
+    public KPDFCompare setThresholdHeight(float thresholdHeight) {
+        this.thresholdHeight = thresholdHeight;
+        return this;
+    }
+
+    public float getThresholdStartY() {
+        return thresholdStartY;
+    }
+
+    public KPDFCompare setThresholdStartY(float thresholdStartY) {
+        this.thresholdStartY = thresholdStartY;
+        return this;
+    }
+
+    public float getThresholdWidth() {
+        return thresholdWidth;
+    }
+
+    public KPDFCompare setThresholdWidth(float thresholdWidth) {
+        this.thresholdWidth = thresholdWidth;
+        return this;
+    }
+
+    public KPDFTextStripper getKpdfTextStripperExpected() {
+        return kpdfTextStripperExpected;
+    }
+
+    public KPDFTextStripper getKpdfTextStripperActual() {
+        return kpdfTextStripperActual;
+    }
+
+
+    public PDDocument getPdDocExpected() {
+        return pdDocExpected;
+    }
+
+    public KPDFCompare setPdDocActual(String pdfFile) throws IOException {
+        return setPdDocActual(getPDDocument(pdfFile));
+
+    }
+    public KPDFCompare setPdDocExpected(PDDocument pdDocExpected) {
+        this.pdDocExpected = pdDocExpected;
+        return this;
+    }
+    public KPDFCompare setPdDocExpected(String pdfFile) throws IOException {
+        return setPdDocExpected(getPDDocument(pdfFile));
+
+    }
+
+    public PDDocument getPdDocActual() {
+        return pdDocActual;
+    }
+
+    public KPDFCompare setPdDocActual(PDDocument pdDocActual) {
+        this.pdDocActual = pdDocActual;
+        return this;
+    }
+
+    public String getVisualCompareMethod() {
+        return visualCompareMethod;
+    }
+
+    public KPDFCompare setVisualCompareMethod(String visualCompareMethod) {
+        this.visualCompareMethod = visualCompareMethod;
+        return this;
+    }
+
+    public KPDFCompare findAllDifferencesInTexts() throws IOException {
+        //  textDifferences = new ArrayList<TextDifference>();
+        kpdfTextStripperExpected = new KPDFTextStripper();
+        kpdfTextStripperExpected.getText(pdDocExpected);
+        kpdfTextStripperActual = new KPDFTextStripper();
+        kpdfTextStripperActual.getText(pdDocActual);
+
+        if ((kpdfTextStripperActual == null) || (kpdfTextStripperActual == null))
+            throw new IllegalStateException("please choose files to compare");
+
+        TextDifferencesBeforeProcessed = new ArrayList<TextDifference>();
+
+        String HeightNotSame = "HeightNotSame";
+        String WidthNotSame = "WidthNotSame";
+        String StartXNotSame = "StartXNotSame";
+        String StartYNotSame = "StartYNotSame";
+        String FontNotSame = "FontNotSame";
+        String FontSizeNotSame = "FontSizeNotSame";
+        String ValueNotSame = "ValueNotSame";
+        String ColorRenderingModeNotSame = "ColorRenderingModeNotSame";
 
         //if it's passed above, continue to compare other parts
-        for (int i = 0; i < expected.getPdfTextInfos().size(); i++) {
+        for (int i = 0; i < Math.min(kpdfTextStripperExpected.getPdfTextInfos().size(), kpdfTextStripperActual.getPdfTextInfos().size()); i++) {
             boolean isSame = true;
+            StringBuilder differenceTypes = new StringBuilder();
+            if (kpdfTextStripperExpected.getPdfTextInfos().get(i).getHeight() != kpdfTextStripperActual.getPdfTextInfos().get(i).getHeight()) {
+                isSame = false;
+                differenceTypes.append(" " + HeightNotSame);// = false;
+            }
+            if (kpdfTextStripperExpected.getPdfTextInfos().get(i).getWidth() != kpdfTextStripperActual.getPdfTextInfos().get(i).getWidth()) {
+                isSame = false;
+                differenceTypes.append(" " + WidthNotSame);// = false;++;//
+            }
+            if (kpdfTextStripperExpected.getPdfTextInfos().get(i).getStartX() != kpdfTextStripperActual.getPdfTextInfos().get(i).getStartX()) {
+                if ((0.0 == kpdfTextStripperActual.getPdfTextInfos().get(i).getStartX()) && (kpdfTextStripperExpected.getPdfTextInfos().get(i).getWidth() == kpdfTextStripperActual.getPdfTextInfos().get(i).getWidth())) {
+                    //it's due to the bug of pdf box libraries, it should be ignored
+                    kpdfTextStripperActual.getPdfTextInfos().get(i).setStartX(kpdfTextStripperExpected.getPdfTextInfos().get(i).getStartX());
+                } else {
+                    isSame = false;
+                    differenceTypes.append(" " + StartXNotSame);// = false; = false;
+                }
+            }
+            if (kpdfTextStripperExpected.getPdfTextInfos().get(i).getStartY() != kpdfTextStripperActual.getPdfTextInfos().get(i).getStartY()) {
+                isSame = false;
+                differenceTypes.append(" " + StartYNotSame);// = false;lse;
+            }
+            if (!kpdfTextStripperExpected.getPdfTextInfos().get(i).getFont().equals(kpdfTextStripperActual.getPdfTextInfos().get(i).getFont())) {
+                isSame = false;
+                differenceTypes.append(" " + FontNotSame);// = false;lse;
+            }
+            if (kpdfTextStripperExpected.getPdfTextInfos().get(i).getFontSize() != kpdfTextStripperActual.getPdfTextInfos().get(i).getFontSize()) {
+                isSame = false;
+                differenceTypes.append(" " + FontSizeNotSame);// = false;lse;
+            }
+            if (!kpdfTextStripperExpected.getPdfTextInfos().get(i).getValue().equals(kpdfTextStripperActual.getPdfTextInfos().get(i).getValue())) {
 
+                //font, fontsize, startX, startY, width, height are all the same
+                int length = kpdfTextStripperActual.getPdfTextInfos().get(i).getValue().length();
+                if (isSame && (kpdfTextStripperActual.getPdfTextInfos().get(i).getValue().substring(length - 1, length).equals(" "))) {
+                    //it means the difference is caused by a " "'
+                    kpdfTextStripperActual.getPdfTextInfos().get(i).setValue(kpdfTextStripperExpected.getPdfTextInfos().get(i).getValue());
+                } else {
 
-            if (expected.getPdfTextInfos().get(i).getHeight() != actual.getPdfTextInfos().get(i).getHeight()) {
-                isSame = false;
-                countHeightNotSame++;// = false;
+                    isSame = false;
+                    differenceTypes.append(" " + ValueNotSame);// = false;lse;}
+                }
             }
-            if (expected.getPdfTextInfos().get(i).getWidth() != actual.getPdfTextInfos().get(i).getWidth()) {
+            if (!kpdfTextStripperExpected.getPdfTextInfos().get(i).getGraphicsStateHashMap().equals(kpdfTextStripperActual.getPdfTextInfos().get(i).getGraphicsStateHashMap())) {
                 isSame = false;
-                countWidthNotSame++;//
+                differenceTypes.append(" " + ColorRenderingModeNotSame);// = false;lse;
             }
-            if (expected.getPdfTextInfos().get(i).getStartX() != actual.getPdfTextInfos().get(i).getStartX()) {
-                isSame = false;
-                countStartXNotSame++;// = false;
-            }
-            if (expected.getPdfTextInfos().get(i).getStartY() != actual.getPdfTextInfos().get(i).getStartY()) {
-                isSame = false;
-                countStartYNotSame++;// = false;
-            }
-            if (!expected.getPdfTextInfos().get(i).getFont().equals(actual.getPdfTextInfos().get(i).getFont())) {
-                isSame = false;
-                countFontNotSame++;// = false;
-            }
-            if (expected.getPdfTextInfos().get(i).getFontSize() != actual.getPdfTextInfos().get(i).getFontSize()) {
-                isSame = false;
-                countFontSizeNotSame++;// = false;
-            }
-            if (!expected.getPdfTextInfos().get(i).getValue().equals(actual.getPdfTextInfos().get(i).getValue())) {
-                isSame = false;
-                countValueNotSame++;// = false;
-            }
-            if (!expected.getPdfTextInfos().get(i).getStrokingColor().equals(actual.getPdfTextInfos().get(i).getStrokingColor())) {
-                isSame = false;
-                countStrokingColorNotSame++;// = false;
-            }
-            if (!expected.getPdfTextInfos().get(i).getNonStrokingColor().equals(actual.getPdfTextInfos().get(i).getNonStrokingColor())) {
-                isSame = false;
-                countNonStrokingColorNotSame++;// = false;
-            }
-            if (!expected.getPdfTextInfos().get(i).getRenderingMode().equals(actual.getPdfTextInfos().get(i).getRenderingMode())) {
-                isSame = false;
-                countRenderingModeNotSame++;// = false;
-            }
+
             if (!isSame) {
-                differenceCount++;
-                KFilter lineDifferentInActualPDF = new KFilter();
-                KFilter lineDifferentInExpectedPDF = new KFilter();
-                //output the miss match
-                logger.info("line " + Integer.toString(i) + " :");
-                lineDifferentInExpectedPDF.setIndex(String.valueOf(i));
-                lineDifferentInActualPDF.setIndex(String.valueOf(i));
 
-                lineDifferentInExpectedPDF.setValue(expected.getPdfTextInfos().get(i).getValue());
-                lineDifferentInActualPDF.setValue(actual.getPdfTextInfos().get(i).getValue());
-                lineDifferentInExpectedPDF.setStartX(String.valueOf(expected.getPdfTextInfos().get(i).getStartX()));
-                lineDifferentInActualPDF.setStartX(String.valueOf(actual.getPdfTextInfos().get(i).getStartX()));
-                lineDifferentInExpectedPDF.setStartY(String.valueOf(expected.getPdfTextInfos().get(i).getStartY()));
-                lineDifferentInActualPDF.setStartY(String.valueOf(actual.getPdfTextInfos().get(i).getStartY()));
-                lineDifferentInExpectedPDF.setWidth(String.valueOf(expected.getPdfTextInfos().get(i).getWidth()));
-                lineDifferentInActualPDF.setWidth(String.valueOf(actual.getPdfTextInfos().get(i).getWidth()));
-                lineDifferentInExpectedPDF.setHeight(String.valueOf(expected.getPdfTextInfos().get(i).getHeight()));
-                lineDifferentInActualPDF.setHeight(String.valueOf(actual.getPdfTextInfos().get(i).getHeight()));
-                lineDifferentInExpectedPDF.setFont(expected.getPdfTextInfos().get(i).getFont());
-                lineDifferentInActualPDF.setFont(actual.getPdfTextInfos().get(i).getFont());
-                lineDifferentInExpectedPDF.setFontSize(String.valueOf(expected.getPdfTextInfos().get(i).getFontSize()));
-                lineDifferentInActualPDF.setFontSize(String.valueOf(actual.getPdfTextInfos().get(i).getFontSize()));
+                String message = "line " + Integer.toString(i) + " differ due to " + differenceTypes.toString() + " : expected | actual";
+                TextDifference textDifference = new TextDifference();
+                textDifference.expected.setValue(kpdfTextStripperExpected.getPdfTextInfos().get(i).getValue());
+                textDifference.expected.setStartX(String.valueOf(kpdfTextStripperExpected.getPdfTextInfos().get(i).getStartX()));
+                textDifference.expected.setStartY(String.valueOf(kpdfTextStripperExpected.getPdfTextInfos().get(i).getStartY()));
+                textDifference.expected.setWidth(String.valueOf(kpdfTextStripperExpected.getPdfTextInfos().get(i).getWidth()));
+                textDifference.expected.setHeight(String.valueOf(kpdfTextStripperExpected.getPdfTextInfos().get(i).getHeight()));
+                textDifference.expected.setFont(kpdfTextStripperExpected.getPdfTextInfos().get(i).getFont());
+                textDifference.expected.setFontSize(String.valueOf(kpdfTextStripperExpected.getPdfTextInfos().get(i).getFontSize()));
+                textDifference.expected.setIndex(String.valueOf(i));
+                textDifference.expected.setGraphicsStateHashMap(kpdfTextStripperExpected.getPdfTextInfos().get(i).getGraphicsStateHashMap());
+                textDifference.expected.setPageNumber(kpdfTextStripperExpected.getPdfTextInfos().get(i).getPageNumber());
 
-                logger.info("column: expected | actual");
-                logger.info("value: " + expected.getPdfTextInfos().get(i).getValue() + " | " + actual.getPdfTextInfos().get(i).getValue());
-                logger.info("x: " + expected.getPdfTextInfos().get(i).getStartX() + " | " + actual.getPdfTextInfos().get(i).getStartX());
-                logger.info("y: " + expected.getPdfTextInfos().get(i).getStartY() + " | " + actual.getPdfTextInfos().get(i).getStartY());
-                logger.info("width: " + expected.getPdfTextInfos().get(i).getWidth() + " | " + actual.getPdfTextInfos().get(i).getWidth());
-                logger.info("height: " + expected.getPdfTextInfos().get(i).getHeight() + " | " + actual.getPdfTextInfos().get(i).getHeight());
-                logger.info("font: " + expected.getPdfTextInfos().get(i).getFont() + " | " + actual.getPdfTextInfos().get(i).getFont());
-                logger.info("font size: " + expected.getPdfTextInfos().get(i).getFontSize() + " | " + actual.getPdfTextInfos().get(i).getFontSize());
-                logger.info("StrokingColor: " + expected.getPdfTextInfos().get(i).getStrokingColor() + " | " + actual.getPdfTextInfos().get(i).getStrokingColor());
-                logger.info("NonStrokingColor: " + expected.getPdfTextInfos().get(i).getNonStrokingColor() + " | " + actual.getPdfTextInfos().get(i).getNonStrokingColor());
-                logger.info("RenderingMode: " + expected.getPdfTextInfos().get(i).getRenderingMode() + " | " + actual.getPdfTextInfos().get(i).getRenderingMode());
-                logger.info("====================================");
 
-                linesDifferentInAcutalPDF.add(lineDifferentInActualPDF);
-                linesDifferentInExpectedPDF.add(lineDifferentInExpectedPDF);
+                textDifference.actual.setIndex(String.valueOf(i));
+                textDifference.actual.setValue(kpdfTextStripperActual.getPdfTextInfos().get(i).getValue());
+                textDifference.actual.setStartX(String.valueOf(kpdfTextStripperActual.getPdfTextInfos().get(i).getStartX()));
+                textDifference.actual.setStartY(String.valueOf(kpdfTextStripperActual.getPdfTextInfos().get(i).getStartY()));
+                textDifference.actual.setWidth(String.valueOf(kpdfTextStripperActual.getPdfTextInfos().get(i).getWidth()));
+                textDifference.actual.setHeight(String.valueOf(kpdfTextStripperActual.getPdfTextInfos().get(i).getHeight()));
+                textDifference.actual.setFont(kpdfTextStripperActual.getPdfTextInfos().get(i).getFont());
+                textDifference.actual.setFontSize(String.valueOf(kpdfTextStripperActual.getPdfTextInfos().get(i).getFontSize()));
+                textDifference.actual.setGraphicsStateHashMap(kpdfTextStripperActual.getPdfTextInfos().get(i).getGraphicsStateHashMap());
+                textDifference.actual.setPageNumber(kpdfTextStripperActual.getPdfTextInfos().get(i).getPageNumber());
+
+                String reason = DifferenceInTextTolerancePossible;
+                TextDifferencesBeforeProcessed.add(textDifference);
+
+                logDifference(message, TextDifferencesBeforeProcessed, null, reason);
             }
         }
 
+        if (Math.abs(kpdfTextStripperExpected.getPdfTextInfos().size() - kpdfTextStripperActual.getPdfTextInfos().size()) > 0) {
+            logger.info("comparison stops since the difference is too apparent");
+            if (kpdfTextStripperExpected.getPdfTextInfos().size() > kpdfTextStripperActual.getPdfTextInfos().size()) {
+                for (int i = Math.min(kpdfTextStripperExpected.getPdfTextInfos().size(), kpdfTextStripperActual.getPdfTextInfos().size()); i < kpdfTextStripperExpected.getPdfTextInfos().size(); i++) {
+                    TextDifference textDifference = new TextDifference();
 
-        if (isTolerant) {
+                    textDifference.expected.setValue(kpdfTextStripperExpected.getPdfTextInfos().get(i).getValue());
+                    textDifference.expected.setStartX(String.valueOf(kpdfTextStripperExpected.getPdfTextInfos().get(i).getStartX()));
+                    textDifference.expected.setStartY(String.valueOf(kpdfTextStripperExpected.getPdfTextInfos().get(i).getStartY()));
+                    textDifference.expected.setWidth(String.valueOf(kpdfTextStripperExpected.getPdfTextInfos().get(i).getWidth()));
+                    textDifference.expected.setHeight(String.valueOf(kpdfTextStripperExpected.getPdfTextInfos().get(i).getHeight()));
+                    textDifference.expected.setFont(kpdfTextStripperExpected.getPdfTextInfos().get(i).getFont());
+                    textDifference.expected.setFontSize(String.valueOf(kpdfTextStripperExpected.getPdfTextInfos().get(i).getFontSize()));
+                    textDifference.expected.setIndex(String.valueOf(i));
+                    textDifference.expected.setGraphicsStateHashMap(kpdfTextStripperExpected.getPdfTextInfos().get(i).getGraphicsStateHashMap());
 
-            //AI decidsion: 1. if all the incorrect X is grouped with the same Y , then it should be fine
-            int countNotAlignedX = 0;
-            boolean isStillAlignedX = true;
-            for (int i = 0; i < linesDifferentInExpectedPDF.size(); i++) {
-                String actualX = linesDifferentInAcutalPDF.get(i).getStartX();
-                String expectedX = linesDifferentInExpectedPDF.get(i).getStartX();
-                for (int j = i; j < linesDifferentInAcutalPDF.size(); j++) {
-                    if (linesDifferentInAcutalPDF.get(j).getStartX().equals(actualX)) {
-                        if (!expectedX.equals(linesDifferentInExpectedPDF.get(j).getStartX())) {
-                            isStillAlignedX = false;
-                            logger.info("there is one spot not aligned between expected pdf and actual pdf, even after adjustment , expected startX= " + actualX);
-                            logger.info("value: " + linesDifferentInExpectedPDF.get(i).getValue() + " | " + linesDifferentInAcutalPDF.get(j).getValue());
-                            logger.info("x " + linesDifferentInExpectedPDF.get(i).getStartX() + " | " + linesDifferentInAcutalPDF.get(j).getStartX());
-                            logger.info("y " + linesDifferentInExpectedPDF.get(i).getStartY() + " | " + linesDifferentInAcutalPDF.get(j).getStartY());
-                            logger.info("width " + linesDifferentInExpectedPDF.get(i).getWidth() + " | " + linesDifferentInAcutalPDF.get(j).getWidth());
-                            logger.info("height " + linesDifferentInExpectedPDF.get(i).getHeight() + " | " + linesDifferentInAcutalPDF.get(j).getHeight());
-                            logger.info("font " + linesDifferentInExpectedPDF.get(i).getFont() + " | " + linesDifferentInAcutalPDF.get(j).getFont());
-                            logger.info("font size " + linesDifferentInExpectedPDF.get(i).getFontSize() + " | " + linesDifferentInAcutalPDF.get(j).getFontSize());
-                            //logger.info("StrokingColor " + linesDifferentInExpectedPDF.get(i).getFontSize() + " | " + linesDifferentInAcutalPDF.get(j).getFontSize());
-                            countNotAlignedX++;
-                        } else {
-                            logger.info("the difference in X is ignored after adjustment of alignment of X : " + linesDifferentInExpectedPDF.get(i).getStartX() + " | " + linesDifferentInAcutalPDF.get(j).getStartX());
-
-                            countStartXNotSame--;
-                        }
-
-                    }
+                    textDifference.actual = null;
+                    textDifference.reason = DifferenceInTextNOWayTolerance;
+                    TextDifferencesBeforeProcessed.add(textDifference);
                 }
             }
 
-            int ccountNotAlignedY = 0;
-            boolean isStillAlignedY = true;
-            for (int i = 0; i < linesDifferentInExpectedPDF.size(); i++) {
-                String actualY = linesDifferentInAcutalPDF.get(i).getStartY();
-                String expectedY = linesDifferentInExpectedPDF.get(i).getStartY();
-                for (int j = i; j < linesDifferentInAcutalPDF.size(); j++) {
-                    if (linesDifferentInAcutalPDF.get(j).getStartX().equals(actualY)) {
-                        if (!expectedY.equals(linesDifferentInExpectedPDF.get(j).getStartY())) {
-                            isStillAlignedY = false;
-                            logger.info("there is one spot not aligned between expected pdf and actual pdf, even after adjustment , expected startX= " + actualY);
-                            logger.info("value: " + linesDifferentInExpectedPDF.get(i).getValue() + " | " + linesDifferentInAcutalPDF.get(j).getValue());
-                            logger.info("x " + linesDifferentInExpectedPDF.get(i).getStartX() + " | " + linesDifferentInAcutalPDF.get(j).getStartX());
-                            logger.info("y " + linesDifferentInExpectedPDF.get(i).getStartY() + " | " + linesDifferentInAcutalPDF.get(j).getStartY());
-                            logger.info("width " + linesDifferentInExpectedPDF.get(i).getWidth() + " | " + linesDifferentInAcutalPDF.get(j).getWidth());
-                            logger.info("height " + linesDifferentInExpectedPDF.get(i).getHeight() + " | " + linesDifferentInAcutalPDF.get(j).getHeight());
-                            logger.info("font " + linesDifferentInExpectedPDF.get(i).getFont() + " | " + linesDifferentInAcutalPDF.get(j).getFont());
-                            logger.info("font size " + linesDifferentInExpectedPDF.get(i).getFontSize() + " | " + linesDifferentInAcutalPDF.get(j).getFontSize());
-                            ccountNotAlignedY++;
-                        } else {
-                            logger.info("the difference in Y is ignored after adjustment of alignment of Y : " + linesDifferentInExpectedPDF.get(i).getStartY() + " | " + linesDifferentInAcutalPDF.get(j).getStartY());
-                            countStartYNotSame--;
-                        }
-                    }
+            if (kpdfTextStripperExpected.getPdfTextInfos().size() < kpdfTextStripperActual.getPdfTextInfos().size()) {
+                for (int i = Math.min(kpdfTextStripperExpected.getPdfTextInfos().size(), kpdfTextStripperActual.getPdfTextInfos().size()); i < kpdfTextStripperActual.getPdfTextInfos().size(); i++) {
+
+                    TextDifference textDifference = new TextDifference();
+                    textDifference.actual.setIndex(String.valueOf(i));
+                    textDifference.actual.setValue(kpdfTextStripperActual.getPdfTextInfos().get(i).getValue());
+                    textDifference.actual.setStartX(String.valueOf(kpdfTextStripperActual.getPdfTextInfos().get(i).getStartX()));
+                    textDifference.actual.setStartY(String.valueOf(kpdfTextStripperActual.getPdfTextInfos().get(i).getStartY()));
+                    textDifference.actual.setWidth(String.valueOf(kpdfTextStripperActual.getPdfTextInfos().get(i).getWidth()));
+                    textDifference.actual.setHeight(String.valueOf(kpdfTextStripperActual.getPdfTextInfos().get(i).getHeight()));
+                    textDifference.actual.setFont(kpdfTextStripperActual.getPdfTextInfos().get(i).getFont());
+                    textDifference.actual.setFontSize(String.valueOf(kpdfTextStripperActual.getPdfTextInfos().get(i).getFontSize()));
+                    textDifference.actual.setGraphicsStateHashMap(kpdfTextStripperActual.getPdfTextInfos().get(i).getGraphicsStateHashMap());
+
+                    textDifference.expected = null;
+                    textDifference.reason = DifferenceInTextNOWayTolerance;
+                    TextDifferencesBeforeProcessed.add(textDifference);
                 }
             }
-
-            // 2. the deviation is in certain scope
-            int deviationStartXTooBigCount = 0;
-            for (int i = 0; i < linesDifferentInExpectedPDF.size(); i++) {
-                if (Math.abs(Float.valueOf(linesDifferentInExpectedPDF.get(i).getStartX()) - Float.valueOf(linesDifferentInAcutalPDF.get(i).getStartX())) / Float.valueOf(linesDifferentInExpectedPDF.get(i).getStartX()) > deviationStartX) {
-                    deviationStartXTooBigCount++;
-                    logger.info("the difference in X is ignored : " + linesDifferentInExpectedPDF.get(i).getStartX() + " | " + linesDifferentInAcutalPDF.get(i).getStartX());
-
-                } else {
-                    // countStartXNotSame--;
-                }
-            }
-            int deviationStartYTooBigCount = 0;
-            for (int i = 0; i < linesDifferentInExpectedPDF.size(); i++) {
-                if (Math.abs(Float.valueOf(linesDifferentInExpectedPDF.get(i).getStartY()) - Float.valueOf(linesDifferentInAcutalPDF.get(i).getStartY())) / Float.valueOf(linesDifferentInExpectedPDF.get(i).getStartY()) > deviationStartY) {
-                    deviationStartXTooBigCount++;
-                    logger.info("the difference in y is ignored : " + linesDifferentInExpectedPDF.get(i).getStartY() + " | " + linesDifferentInAcutalPDF.get(i).getStartY());
-                } else {
-                    //  countStartYNotSame--;
-                }
-            }
-            int deviationWidthooBigCount = 0;
-            for (int i = 0; i < linesDifferentInExpectedPDF.size(); i++) {
-                if (Math.abs(Float.valueOf(linesDifferentInExpectedPDF.get(i).getWidth()) - Float.valueOf(linesDifferentInAcutalPDF.get(i).getWidth())) / Float.valueOf(linesDifferentInExpectedPDF.get(i).getWidth()) > deviationWidth) {
-                    deviationWidthooBigCount++;
-                    logger.info("the difference in X is ignored : " + linesDifferentInExpectedPDF.get(i).getWidth() + " | " + linesDifferentInAcutalPDF.get(i).getWidth());
-
-                } else {
-                    countWidthNotSame--;
-                }
-            }
-            //value expected changes
-
-            for (int i = 0; i < linesDifferentInExpectedPDF.size(); i++) {
-
-                if (!linesDifferentInExpectedPDF.get(i).getValue().equals(linesDifferentInAcutalPDF.get(i).getValue())) {
-
-                    boolean found = false;
-                    //deal with values
-                    for (KFilter filter : filters) {
-                        int index = expected.findTextLinesByFilter(filter);
-                        if ((index > 0) && (Integer.valueOf(linesDifferentInExpectedPDF.get(i).getIndex()) == index) && (!found)) {
-                            //
-                            if (filter.getReplacement() == null) {
-                                //it means this line should be ignored
-                                logger.info("due to no expected value, the difference in value is ignored : " + linesDifferentInExpectedPDF.get(i).getValue() + " | " + linesDifferentInAcutalPDF.get(i).getValue());
-                                countValueNotSame--;
-                                countWidthNotSame--;
-                                found = true;
-                            } else {
-                                if (filter.getReplacement().equals(linesDifferentInAcutalPDF.get(i).getValue()) && (linesDifferentInExpectedPDF.get(i).getValue().equals(filter.getValue()))) {
-                                    // the replacement (from what we calculate) equals the actual pdf's actual value and this is the line we have made a template on (cuz the values in expected/filter/expected are the same, it means the same line)
-                                    countValueNotSame--;
-                                    countWidthNotSame--;
-                                    found = true;
-                                } else {
-                                    logger.info("there is one line not having the same text value as expected ");
-                                    logger.info("value: " + linesDifferentInExpectedPDF.get(i).getValue() + " | " + linesDifferentInAcutalPDF.get(i).getValue());
-                                    logger.info("x " + linesDifferentInExpectedPDF.get(i).getStartX() + " | " + linesDifferentInAcutalPDF.get(i).getStartX());
-                                    logger.info("y " + linesDifferentInExpectedPDF.get(i).getStartY() + " | " + linesDifferentInAcutalPDF.get(i).getStartY());
-                                    logger.info("width " + linesDifferentInExpectedPDF.get(i).getWidth() + " | " + linesDifferentInAcutalPDF.get(i).getWidth());
-                                    logger.info("height " + linesDifferentInExpectedPDF.get(i).getHeight() + " | " + linesDifferentInAcutalPDF.get(i).getHeight());
-                                    logger.info("font " + linesDifferentInExpectedPDF.get(i).getFont() + " | " + linesDifferentInAcutalPDF.get(i).getFont());
-                                    logger.info("font size " + linesDifferentInExpectedPDF.get(i).getFontSize() + " | " + linesDifferentInAcutalPDF.get(i).getFontSize());
-                                    found = true;
-                                }
-                            }
-                        }
-                    }
-                    if (!found) {
-                        //it means cannot find filter ,it's a new bug
-                        logger.info("there is one line not having not been mentioned in the template ");
-                        logger.info("value: " + linesDifferentInExpectedPDF.get(i).getValue() + " | " + linesDifferentInAcutalPDF.get(i).getValue());
-                        logger.info("x " + linesDifferentInExpectedPDF.get(i).getStartX() + " | " + linesDifferentInAcutalPDF.get(i).getStartX());
-                        logger.info("y " + linesDifferentInExpectedPDF.get(i).getStartY() + " | " + linesDifferentInAcutalPDF.get(i).getStartY());
-                        logger.info("width " + linesDifferentInExpectedPDF.get(i).getWidth() + " | " + linesDifferentInAcutalPDF.get(i).getWidth());
-                        logger.info("height " + linesDifferentInExpectedPDF.get(i).getHeight() + " | " + linesDifferentInAcutalPDF.get(i).getHeight());
-                        logger.info("font " + linesDifferentInExpectedPDF.get(i).getFont() + " | " + linesDifferentInAcutalPDF.get(i).getFont());
-                        logger.info("font size " + linesDifferentInExpectedPDF.get(i).getFontSize() + " | " + linesDifferentInAcutalPDF.get(i).getFontSize());
-                    }
-                }
-            }
-            //save the filters
-            if ((0 >= countValueNotSame) && (0 >= deviationStartXTooBigCount) && (0 == deviationStartYTooBigCount) && (0 == ccountNotAlignedY) && (0 == countNotAlignedX)) {
-                differenceCount = 0;
-                comparisonResult.put("deviationStartXTooBigCount", deviationStartXTooBigCount);
-                comparisonResult.put("deviationStartYTooBigCount", deviationStartYTooBigCount);
-                comparisonResult.put("ccountNotAlignedY", ccountNotAlignedY);
-                comparisonResult.put("countNotAlignedX", countNotAlignedX);
-                comparisonResult.put("differenceCount", differenceCount);
-            }
-
-
         }
-
-
-        comparisonResult.put("countValueNotSame", countValueNotSame);
-        comparisonResult.put("countHeightNotSame", countHeightNotSame);
-        comparisonResult.put("countWidthNotSame", countWidthNotSame);
-        comparisonResult.put("countStartXNotSame", countStartXNotSame);
-        comparisonResult.put("countStartYNotSame", countStartYNotSame);
-        comparisonResult.put("countFontSizeNotSame", countFontSizeNotSame);
-        comparisonResult.put("countFontNotSame", countFontNotSame);
-        comparisonResult.put("countStrokingColorNotSame", countStrokingColorNotSame);
-        comparisonResult.put("countNonStrokingColorNotSame", countNonStrokingColorNotSame);
-        comparisonResult.put("countRenderingModeNotSame", countRenderingModeNotSame);
-
-        for (Map.Entry<String, Integer> entry : comparisonResult.entrySet()) {
-            String key = entry.getKey();
-            Integer value = entry.getValue();
-            logger.info(key.toString() + " : " + value.toString());
-        }
-
-        return comparisonResult;// > 0 ? false : true;
+        logger.info(kpdfTextStripperExpected.getPdfTextInfos().size());
+        logger.info(kpdfTextStripperActual.getPdfTextInfos().size());
+        return this;
 
     }
 
-    public boolean comparePdfByTextColor(PDDocument pdDocExpected, PDDocument pdDocActual, List<KFilter> filters) throws IOException {
-        KPDFTextStripper actual = new KPDFTextStripper();
-        actual.getText(pdDocActual);
-        KPDFTextStripper expected = new KPDFTextStripper();
-        expected.getText(pdDocExpected);
-        return comparePdfByTextColor(actual, expected, filters);
+    public KPDFCompare processDifferencesInCoordinateWithTolerance() throws IOException {
+        return this.processDifferencesInCoordinateWithTolerance("x").processDifferencesInCoordinateWithTolerance("y");
+
     }
 
-    public HashMap<String, Integer> comparePDFs(String expectedPath, String actualPath, String ignoreJson) throws Exception {
-        return comparePDFs(expectedPath, actualPath, ignoreJson, true, true, true);
+    public KPDFCompare processDifferencesInCoordinateWithTolerance(String coordinate) throws IOException {
+
+        if (!coordinate.toLowerCase().equals("x") && !coordinate.toLowerCase().equals("y"))
+            throw new IllegalArgumentException("coordinate can be only x or y");
+
+        if (!checkProcessableWithTolarance())
+            return this;
+
+        if (TextDifferencesBeforeProcessed == null)
+            throw new IllegalStateException("please run findAllDifferencesInTexts First");
+
+        if (null == TextDifferencesInCoordinateAlignment) {
+            TextDifferencesInCoordinateAlignment = new ArrayList<TextDifference>();
+        }
+
+        List<Float> coordinateListActual = new ArrayList<Float>();
+        List<Float> cooridnateListExpected = new ArrayList<Float>();
+
+        for (int i = 0; i < TextDifferencesBeforeProcessed.size(); i++) {
+            coordinateListActual.add(TextDifferencesBeforeProcessed.get(i).expected.getCoordinateOrWitdhOrHeight(coordinate));
+        }
+        for (int i = 0; i < TextDifferencesBeforeProcessed.size(); i++) {
+            cooridnateListExpected.add(TextDifferencesBeforeProcessed.get(i).actual.getCoordinateOrWitdhOrHeight(coordinate));
+        }
+
+        for (int i = 0; i < cooridnateListExpected.size(); i++) {
+            if (coordinateListActual.get(i) != cooridnateListExpected.get(i)) {
+                System.out.println(coordinateListActual.get(i));
+                System.out.println(cooridnateListExpected.get(i));
+                coordinateListActual.remove(i);//, (float) -1);
+                cooridnateListExpected.remove(i);//, (float) -1);
+            } else {
+                boolean foundMatch = false;
+                for (int j = i + 1; j < cooridnateListExpected.size(); j++) {
+                    if (cooridnateListExpected.get(j).equals(cooridnateListExpected.get(i))) {
+                        foundMatch = true;
+                        //label it to avoid loop again
+                        coordinateListActual.remove(j);//, (float) -1);
+                        cooridnateListExpected.remove(j);//, (float) -1);
+
+                        if (coordinateListActual.get(j).equals(coordinateListActual.get(i))) {
+                            //the deviation in x alignment is ignored
+                            logger.info("the difference in " + coordinate + " is ignored after adjustment of alignment of " + coordinate + " : " + cooridnateListExpected.get(j) + " | " + cooridnateListExpected.get(j));
+
+                        } else {
+//                        foundMatch = false;
+//                        coordinateListActual.remove(j);//, (float) -1);
+//                        cooridnateListExpected.remove(j);//, (f
+                            String reason = coordinate + " cordinate is not aligned after ajustment";
+                            String message = "there is one spot not aligned between expected pdf and actual pdf, even after adjustment , expected:" + cooridnateListExpected.get(j) + " != " + coordinateListActual.get(j);
+                            logDifference(message, TextDifferencesBeforeProcessed, j, reason, TextDifferencesInCoordinateAlignment);
+                        }
+                    }
+                    if (!foundMatch) {
+
+                        coordinateListActual.remove(i);//, (float) -1);
+                        cooridnateListExpected.remove(i);//, (float) -1);
+
+                        //rule out the possiblity of differences in color and rendering mode
+
+                        //so if one deviation in X cannot find at least one pair, then computer has no idea if it's right or wrong, in this case , will output wrong anyway
+                        TextDifference textDifference = new TextDifference();
+                        textDifference.expected = TextDifferencesBeforeProcessed.get(i).expected;
+                        textDifference.actual = TextDifferencesBeforeProcessed.get(i).actual;
+                        textDifference.reason = coordinate + " cordinate is not aligned after ajustment";
+                        String message = "this deviation happens only once on the " + coordinate + " coordinate, so we are not sure if it's made this way on purpose";
+                        logDifference(message, TextDifferencesInCoordinateAlignment, textDifference);
+
+                    }
+
+                }
+            }
+
+
+        }
+        return this;
+    }
+
+    public KPDFCompare processDifferencesInDeviationWithTolerance() {
+        return this.processDifferencesInDeviationWithTolerance("X", this.thresholdStartX)
+                .processDifferencesInDeviationWithTolerance("Y", this.thresholdStartY)
+                .processDifferencesInDeviationWithTolerance("height", this.thresholdHeight)
+                .processDifferencesInDeviationWithTolerance("width", this.thresholdWidth);
+
+    }
+
+    public KPDFCompare processDifferencesInDeviationWithTolerance(String deviationType, Float threshold) {
+
+        if (!checkProcessableWithTolarance())
+            return this;
+        if (TextDifferencesBeforeProcessed == null)
+            throw new IllegalStateException("please run findAllDifferencesInTexts First");
+
+        if (!deviationType.toLowerCase().equals("x") && !deviationType.toLowerCase().equals("y") && !deviationType.toLowerCase().equals("width") && !deviationType.toLowerCase().equals("height"))
+            throw new IllegalArgumentException("coordinate can be only x or y or width or height");
+
+        if (null == TextDifferencesInCoordinateDeviation)
+            TextDifferencesInCoordinateDeviation = new ArrayList<TextDifference>();
+
+        List<Float> coordinateListActual = new ArrayList<Float>();
+        List<Float> cooridnateListExpected = new ArrayList<Float>();
+
+        for (int i = 0; i < TextDifferencesBeforeProcessed.size(); i++) {
+            coordinateListActual.add(TextDifferencesBeforeProcessed.get(i).expected.getCoordinateOrWitdhOrHeight(deviationType));
+        }
+
+        for (int i = 0; i < TextDifferencesBeforeProcessed.size(); i++) {
+            cooridnateListExpected.add(TextDifferencesBeforeProcessed.get(i).actual.getCoordinateOrWitdhOrHeight(deviationType));
+        }
+
+        String message = null;
+        Float deviation = Float.valueOf(0);
+        for (int i = 0; i < cooridnateListExpected.size(); i++) {
+
+            deviation = Math.abs(coordinateListActual.get(i) - cooridnateListExpected.get(i)) / Math.max(coordinateListActual.get(i), cooridnateListExpected.get(i));
+            message = "the difference in " + deviationType.toUpperCase() + " is too big : " + cooridnateListExpected.get(i) + " | " + coordinateListActual.get(i);
+            if (deviation != 0) {
+                if (deviation > threshold) {
+                    String reason = "deviation in " + deviationType.toUpperCase() + " coordinate is out of the tolerance region";
+                    logDifference(message, TextDifferencesBeforeProcessed, i, reason, TextDifferencesInCoordinateDeviation);
+                } else {
+                }
+            }
+
+
+        }
+        return this;
+    }
+
+    public boolean checkProcessableWithTolarance() {
+        //too many differences, and impossible to be the same in a tolerantable way as there are difference lines in tow pdf
+
+        if (null == TextDifferencesBeforeProcessed)
+            throw new IllegalStateException("please run finAllTextDifferences method first");
+        return ((TextDifferencesBeforeProcessed.get(TextDifferencesBeforeProcessed.size() - 1).actual != null) && (TextDifferencesBeforeProcessed.get(TextDifferencesBeforeProcessed.size() - 1).expected != null));
+    }
+
+    public KPDFCompare findDifferencesInColorRenderingMode() throws IOException {
+
+        kpdfTextStripperExpected = new KPDFTextStripper();
+        kpdfTextStripperExpected.getText(pdDocExpected);
+        kpdfTextStripperActual = new KPDFTextStripper();
+        kpdfTextStripperActual.getText(pdDocActual);
+
+        //if(!checkProcessableWithTolarance())return this;
+        if ((kpdfTextStripperExpected == null) || (kpdfTextStripperActual == null))
+            throw new IllegalStateException("please choose files to compare First");
+
+        TextDifferencesInColorRenderingMode = new ArrayList<TextDifference>();
+
+        for (int i = 0; i < kpdfTextStripperExpected.getPdfTextInfos().size(); i++) {
+            boolean sameColor = true;
+            if (!kpdfTextStripperExpected.getPdfTextInfos().get(i).getGraphicsStateHashMap().equals(kpdfTextStripperActual.getPdfTextInfos().get(i).getGraphicsStateHashMap())) {
+                sameColor = false;
+                logger.info(kpdfTextStripperExpected.getPdfTextInfos().get(i).getValue());
+            }
+            if (!sameColor) {
+                TextDifference textDifference = new TextDifference();
+                textDifference.expected.setGraphicsStateHashMap(kpdfTextStripperExpected.getPdfTextInfos().get(i).getGraphicsStateHashMap());
+                textDifference.expected.setValue(kpdfTextStripperExpected.getPdfTextInfos().get(i).getValue());
+                textDifference.expected.setValue(kpdfTextStripperExpected.getPdfTextInfos().get(i).getValue());
+
+                textDifference.actual.setValue(kpdfTextStripperActual.getPdfTextInfos().get(i).getValue());
+                textDifference.actual.setGraphicsStateHashMap(kpdfTextStripperActual.getPdfTextInfos().get(i).getGraphicsStateHashMap());
+                textDifference.actual.setValue(kpdfTextStripperActual.getPdfTextInfos().get(i).getValue());
+
+                textDifference.reason = DIFFERENCE_IN_COLOR_RENDERING_MODE;
+                logDifference(textDifference.reason, TextDifferencesInColorRenderingMode, textDifference);
+            }
+        }
+        return this;
+    }
+
+    public KPDFCompare processDifferencesInTextContentsWithExpectations() {
+
+        if (!checkProcessableWithTolarance()) return this;
+        if (TextDifferencesBeforeProcessed == null)
+            throw new IllegalStateException("please run findAllDifferencesInTexts First");
+
+        int size = TextDifferencesBeforeProcessed.size();
+        TextDifferencesInTextContent = new ArrayList<TextDifference>();
+
+        for (int i = 0; i < size; i++) {
+            if (!TextDifferencesBeforeProcessed.get(i).expected.getValue().equals(TextDifferencesBeforeProcessed.get(i).actual.getValue())) {
+                int index = findTextLinesByFilter(filtersForTextComparison, TextDifferencesBeforeProcessed.get(i));
+                //if index > 0, it indicates the difference is an expected oone
+                if (index >= 0) {
+                    //it means this line should be ignored
+                    if (filtersForTextComparison.get(index).getReplacement() == null) {
+                        logger.info("due to no expected value, the difference in value is ignored : " + TextDifferencesBeforeProcessed.get(i).expected.getValue() + " | " + TextDifferencesBeforeProcessed.get(i).actual.getValue());
+                    } else {
+                        //it means this value of the line euals replacment
+                        if (filtersForTextComparison.get(index).getReplacement().equals(TextDifferencesBeforeProcessed.get(i).actual.getValue())) {
+                            //it means this line should be ignored; the replacement is identical to the actual value
+                            logger.info("due to replacement value equals actual value, the difference in value is ignored : " + TextDifferencesBeforeProcessed.get(i).expected.getValue() + " | " + TextDifferencesBeforeProcessed.get(i).actual.getValue());
+                        } else {
+                            //it means this value of the line doesnot equal replacment
+                            logDifference("there is one line not having the same text value as expected ", TextDifferencesBeforeProcessed, i, DifferenceInTextContent, TextDifferencesInTextContent);
+                        }
+                    }
+                } else {
+                    //it means , there is a difference in the two lines conent, however, the filter  doesnot expect this difference. thus ,it's a new bug!
+                    logDifference("there is one line differences having not been mentioned in the template ", TextDifferencesBeforeProcessed, i, DifferenceInTextContent, TextDifferencesInTextContent);
+                }
+            }
+
+        }
+
+        return this;
     }
 
     //visual compare; text content compare; text color compare
-    public HashMap<String, Integer> comparePDFs(String expectedPdfFullpath, String actuaPDFFulllPath, String ignoreJson, boolean visualCompare, boolean textContentCompare, boolean textColorCompare) throws Exception {
+    public KPDFCompare withTextDifferencesIgnored() throws Exception {
 
+        if (null == TextDifferencesBeforeProcessed)
+            throw new IllegalStateException("please run findAllTextDifferences first");
 
-        HashMap<String, Integer> result = new HashMap<String, Integer>();
+        isVisuallyTolerant = true;
 
-        List<KFilter> filtersOnContext = generateFilters(ignoreJson);
+        filtersForVisualComparison = new ArrayList<KPDFTextInfo>();
 
-        //get all the text info
-        PDDocument pdDocActual = getPDDocument(actuaPDFFulllPath);
-        PDDocument pdDocExpected = getPDDocument(expectedPdfFullpath);
-        KPDFTextStripper stripperActual = new KPDFTextStripper();
-        stripperActual.getText(pdDocActual);
-        KPDFTextStripper stripperExpected = new KPDFTextStripper();
-        stripperExpected.getText(pdDocExpected);
+        if (this.TextDifferencesBeforeProcessed.size() > 0) {
 
-
-        if (textContentCompare) {
-            result = comparePdfByTextContent(stripperExpected, stripperActual, filtersOnContext);
-        }
-
-//        if (textColorCompare) {
-//             comparePdfByTextColor(stripperExpected, stripperActual, filtersOnContext);
-//        }
-        //cover the changed parts
-        if (visualCompare) {
-            DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd-HH-mm-ss");
-            String expectedPdf = "expected" + dateFormat.format(new Date()) + ".pdf";
-            String actualPdf = "actual" + dateFormat.format(new Date()) + ".pdf";
-            File fileExpected = new File(workingDirectory + expectedPdf);
-            File fileActual = new File(workingDirectory + actualPdf);
-
-            List<KFilter> kFilters = new ArrayList<KFilter>();
-            for (int i = 0; i < linesDifferentInExpectedPDF.size(); i++) {
-                KFilter kFilter = new KFilter();
-                float startX = Math.min(Float.valueOf(linesDifferentInAcutalPDF.get(i).getStartX()), Float.valueOf(linesDifferentInExpectedPDF.get(i).getStartX()));
-                kFilter.setStartX(String.valueOf(startX));
-                float startY = Math.min(Float.valueOf(linesDifferentInAcutalPDF.get(i).getStartY()), Float.valueOf(linesDifferentInExpectedPDF.get(i).getStartY()));
-                kFilter.setStartY(String.valueOf(startY));
-                float maxHeight = Math.max(Float.valueOf(linesDifferentInAcutalPDF.get(i).getHeight()) + Float.valueOf(linesDifferentInAcutalPDF.get(i).getStartY()), Float.valueOf(linesDifferentInExpectedPDF.get(i).getHeight()) + Float.valueOf(linesDifferentInExpectedPDF.get(i).getStartY())) - startY;
-                kFilter.setHeight(String.valueOf(maxHeight));
-                float maxWidth = Math.max(Float.valueOf(linesDifferentInAcutalPDF.get(i).getWidth()) + Float.valueOf(linesDifferentInAcutalPDF.get(i).getStartX()), Float.valueOf(linesDifferentInExpectedPDF.get(i).getWidth()) + Float.valueOf(linesDifferentInExpectedPDF.get(i).getStartX())) - startX;
-                kFilter.setWidth(String.valueOf(maxWidth));
-                kFilters.add(kFilter);
+            for (int i = 0; i < this.TextDifferencesBeforeProcessed.size(); i++) {
+                KPDFTextInfo KPDFTextInfo = new KPDFTextInfo();
+                float startX = Math.min(TextDifferencesBeforeProcessed.get(i).actual.getStartX(), TextDifferencesBeforeProcessed.get(i).expected.getStartX());
+                KPDFTextInfo.setStartX(String.valueOf(startX));
+                float startY = Math.min(TextDifferencesBeforeProcessed.get(i).actual.getStartY(), TextDifferencesBeforeProcessed.get(i).expected.getStartY());
+                KPDFTextInfo.setStartY(String.valueOf(startY));
+                float maxHeight = Math.max(TextDifferencesBeforeProcessed.get(i).actual.getHeight() + TextDifferencesBeforeProcessed.get(i).actual.getStartY(), TextDifferencesBeforeProcessed.get(i).expected.getHeight() + TextDifferencesBeforeProcessed.get(i).expected.getStartY()) - startY;
+                KPDFTextInfo.setHeight(String.valueOf(maxHeight));
+                float maxWidth = Math.max(TextDifferencesBeforeProcessed.get(i).actual.getWidth() + TextDifferencesBeforeProcessed.get(i).actual.getStartX(), TextDifferencesBeforeProcessed.get(i).expected.getWidth() + TextDifferencesBeforeProcessed.get(i).expected.getStartX()) - startX;
+                KPDFTextInfo.setWidth(String.valueOf(maxWidth));
+                KPDFTextInfo.setPageNumber(TextDifferencesBeforeProcessed.get(i).expected.getPageNumber());
+                filtersForVisualComparison.add(KPDFTextInfo);
             }
-
-            generatePDFOnRectangles(pdDocExpected, kFilters, fileExpected);
-            generatePDFOnRectangles(pdDocActual, kFilters, fileActual);
-
-            result.put("visualComparison", (comparePDFsVisually(pdDocExpected, pdDocActual) ? 0 : 1));
         }
-        pdDocExpected.close();
-        pdDocActual.close();
-        return result;
-    }
 
-    private boolean comparePdfByTextColor(KPDFTextStripper stripperExpected, KPDFTextStripper stripperActual, List<KFilter> filtersOnContext) {
-
-        List<KFilter> filters = filtersOnContext;
-        boolean isSame = true;
-
-        if ((stripperExpected.getGraphicsStates() == null) && (stripperActual.getGraphicsStates() == null)) {
-            return true;
-        } else if ((stripperExpected.getGraphicsStates() != null) && (stripperActual.getGraphicsStates() != null)) {
-            if (stripperExpected.getGraphicsStates().size() != stripperActual.getGraphicsStates().size())
-                return false;
-            else {
-                for (GraphicsState graphicsState : stripperExpected.getGraphicsStates().keySet()) {
-                    while (!stripperExpected.getGraphicsStates().get(graphicsState).equals(stripperActual.getGraphicsStates().get(graphicsState)) && filters.size() > 0) {
-                        isSame = false;
-                        for (KFilter filter : filters) {
-                            if (stripperExpected.getGraphicsStates().get(graphicsState).contains(filter.getValue())) {
-                                stripperExpected.getGraphicsStates().get(graphicsState).replace(filter.getValue(), filter.getReplacement());
-                                filters.remove(filter);
-                                isSame = true;
-                            }
-                        }
-
-                    }
-                }
-                return isSame;
-
-                //return stripperExpected.getGraphicsStates().equals(stripperActual.getGraphicsStates());
-            }
-        } else {
-            return false;
-        }
+        return this;
 
     }
 
-    public boolean comparePDFsVisually(PDDocument pdDocExpected, PDDocument pdDocActual) throws IOException {
+    public KPDFCompare withAreasIgnoredByJsonFilters(String jsonString) throws Exception {
+
+        isVisuallyTolerant = true;
+        filtersForVisualComparison = this.generateFilters(jsonString);
+
+        return this;
+
+    }
+
+    private boolean isVisuallyTolerant = false;
+
+    public boolean findVisualDifferences() throws Exception {
+
         DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd-HH-mm-ss");
-
+        String expectedPdf = "expected" + dateFormat.format(new Date()) + ".pdf";
+        String actualPdf = "actual" + dateFormat.format(new Date()) + ".pdf";
+        File fileExpected = new File(workingDirectory + expectedPdf);
+        File fileActual = new File(workingDirectory + actualPdf);
         String jpgPathNameToSaveExpected = workingDirectory + File.separator + "expected" + dateFormat.format(new Date());
-        List<String> jpgPathNameToSaveExpecteds = pdfToImage(pdDocExpected, jpgPathNameToSaveExpected);
-
         String jpgPathNameToSaveActual = workingDirectory + File.separator + "actual" + dateFormat.format(new Date());
-        List<String> jpgPathNameToSaveActuals = pdfToImage(pdDocActual, jpgPathNameToSaveActual);
-
         String jpagPathNameResult = workingDirectory + File.separator + "result" + dateFormat.format(new Date());
 
-        //compare pixels
-        boolean result = (jpgPathNameToSaveActuals.size() == jpgPathNameToSaveExpecteds.size());
-        if (result) {
-            for (int i = 0; i < jpgPathNameToSaveActuals.size(); i++) {
 
+        if (this.isVisuallyTolerant) {
+            addRectanglesToPDDocument(this.pdDocActual);//, withTextDifferencesIgnored(KPDFTextInfos));
+            addRectanglesToPDDocument(this.pdDocExpected);//, withTextDifferencesIgnored(KPDFTextInfos));
+        }
+
+        List<String> jpgPathNameToSaveActuals = pdfToImages(pdDocActual, jpgPathNameToSaveActual);
+        List<String> jpgPathNameToSaveExpecteds = pdfToImages(pdDocExpected, jpgPathNameToSaveExpected);
+
+        //compare pixels
+        boolean result = jpgPathNameToSaveActuals.size() == jpgPathNameToSaveExpecteds.size();
+
+        int coutnNotSame = 0;
+        for (int i = 0; i < jpgPathNameToSaveActuals.size(); i++) {
+
+            if (this.visualCompareMethod.toLowerCase().contains("fuzzy")) {
                 ImageComparison imageComparison = new ImageComparison(10, 10, 0.05);
                 result = (imageComparison.fuzzyEqual(jpgPathNameToSaveExpecteds.get(i), jpgPathNameToSaveActuals.get(i), jpagPathNameResult + String.valueOf(i) + ".jpg"));
-                logger.info(jpgPathNameToSaveExpecteds.get(i) + " is the same as " + jpgPathNameToSaveActuals.get(i) + " : " + result);
             }
+            if (!result) coutnNotSame++;
+            logger.info(jpgPathNameToSaveExpecteds.get(i) + " is the same as " + jpgPathNameToSaveActuals.get(i) + " : " + result);
         }
-        return result;
+        if (coutnNotSame > 0) return false;
+        return true;
     }
 
-    private PDDocument getPDDocument(String fileName) throws IOException {
+    public PDDocument getPDDocument(String fileName) throws IOException {
         PDFParser parser = null;
         COSDocument cosDoc = null;
         String parsedText = "";
         File file = new File(fileName);
 
-        parser = new PDFParser(new RandomAccessFile(file, "r"));
+
+        try {
+            parser = new PDFParser(new RandomAccessFile(file, "r"));
+        } catch (FileNotFoundException e) {
+            return null;
+        }
         parser.parse();
         cosDoc = parser.getDocument();
         //  pdfStripper = new PDFTextStripper();
         return new PDDocument(cosDoc);
-
-
     }
 
-    public List<String> pdfToImage(PDDocument pdDocument, String jpgPathNameToSaveNoSuffix) throws IOException {
+    public List<String> pdfToImages(PDDocument pdDocument, String jpgPathNameToSaveNoSuffix) throws IOException {
 
         PDFRenderer renderer = new PDFRenderer(pdDocument);
 
@@ -536,31 +667,32 @@ public class KPDFCompare {
         return jpgPathNameToSaves;
     }
 
-    public void testPDFBoxExtractImages(PDDocument pdDocument) throws Exception {
-
-        PDPageTree list = pdDocument.getPages();
-        for (PDPage page : list) {
-            PDResources pdResources = page.getResources();
-            for (COSName c : pdResources.getXObjectNames()) {
-                PDXObject o = pdResources.getXObject(c);
-                if (o instanceof org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject) {
-                    File file = new File("C:/source/" + System.nanoTime() + ".png");
-                    ImageIO.write(((org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject) o).getImage(), "png", file);
-                }
-            }
-        }
+    public List<KPDFTextInfo> getFiltersForTextComparison() {
+        return filtersForTextComparison;
     }
 
-    public List<KFilter> generateFilters(String configJson) throws IOException {
 
-        List<KFilter> filters = new ArrayList<KFilter>();
+    public KPDFCompare withTextDifferencesIgnored(String configJson) throws IOException {
+        this.isTextTolerant = true;
+        this.filtersForTextComparison = this.generateFilters(configJson);
+        return this;
+    }
+
+    //according to the input json String to generate a list of KPDFTextInfo objects
+    public List<KPDFTextInfo> generateFilters(String configJson) throws IOException {
+
+        List<KPDFTextInfo> filters = new ArrayList<KPDFTextInfo>();
+
+        if (configJson == null)
+            return filters;
+        // List<KPDFTextInfo> filtersForTextComparison = new ArrayList<KPDFTextInfo>();
         ObjectMapper mapper = new ObjectMapper();
 
         Map<String, Object> map = mapper.readValue(configJson, Map.class);
 
         JsonNode rootNode = mapper.readTree(configJson);
         for (JsonNode jsonNode : rootNode.get("filter")) {
-            KFilter filter = new KFilter();
+            KPDFTextInfo filter = new KPDFTextInfo();
             if ((jsonNode.get("value") != null) && !jsonNode.get("value").equals("")) {
                 filter.setValue(jsonNode.get("value").textValue());
             }
@@ -591,6 +723,9 @@ public class KPDFCompare {
             if ((jsonNode.get("replacement") != null) && !jsonNode.get("replacement").equals("")) {
                 filter.setReplacement(jsonNode.get("replacement").textValue());
             }
+            if ((jsonNode.get("pageNumber") != null) && !jsonNode.get("pageNumber").equals("")) {
+                filter.setPageNumber(jsonNode.get("pageNumber").textValue());
+            }
 
             filters.add(filter);
 
@@ -598,115 +733,161 @@ public class KPDFCompare {
         return filters;
     }
 
-    public void generatePDFOnRectangles(PDDocument pddDocument, List<KFilter> filtersToExcludeRectangles, File newPDFPath) throws IOException {
+    private PDDocument addRectanglesToPDDocument(PDDocument whichPDDocumentToProcess) throws IOException {
 
-        PDPage page = pddDocument.getPage(0);
-        PDPageContentStream contentStream = new PDPageContentStream(pddDocument, page, true, true);
+        if (null == this.filtersForVisualComparison)
+            return whichPDDocumentToProcess;
 
-        //Setting the non stroking color
+        for (int pageIndex = 0; pageIndex < whichPDDocumentToProcess.getNumberOfPages(); pageIndex++) {
+            PDPage page = whichPDDocumentToProcess.getPage(pageIndex);
+            PDPageContentStream contentStream = new PDPageContentStream(whichPDDocumentToProcess, page, true, true);
 
-        contentStream.setNonStrokingColor(Color.green);
+            //Setting the non stroking color
+            contentStream.setNonStrokingColor(Color.white);
 
-        for (KFilter filter : filtersToExcludeRectangles) {
-            int x = Math.round(Float.valueOf(filter.getStartX()));
-            int y = Math.round(Float.valueOf(filter.getStartY()));
-            int width = Math.round(Float.valueOf(filter.getWidth()));
-            int height = Math.round(Float.valueOf(filter.getHeight()));
-            contentStream.addRect(x - 4, y - 4, width + 5, height + 5);//9091335
-            // break;
+            for (KPDFTextInfo filter : filtersForVisualComparison) {
+                if (filter.getPageNumber() == pageIndex + 1) {
+                    int x = Math.round(Float.valueOf(filter.getStartX()));
+                    int y = Math.round(Float.valueOf(filter.getStartY()));
+                    int width = Math.round(Float.valueOf(filter.getWidth()));
+                    int height = Math.round(Float.valueOf(filter.getHeight()));
+                    Rectangle rect = new Rectangle(x - 4, y - 4, width + 5, height + 5);
+                    System.out.println("Text in the area:" + rect);
+                    contentStream.addRect(x - 4, y - 4, width + 5, height + 5);//9091335
+                }
+            }
+            contentStream.fill();
+            System.out.println("rectangle added");
+            //Closing the ContentStream object
+            contentStream.close();
+
         }
-        contentStream.fill();
-
-        System.out.println("rectangle added");
-
-        //Closing the ContentStream object
-        contentStream.close();
-
-        //Saving the document
-        pddDocument.save(newPDFPath);
-
+        return whichPDDocumentToProcess;
     }
 
-    public void generatePDFOnFilters(PDDocument pddDocument, List<KFilter> filtersToExcludeRectangles, List<KPDFTextInfo> contentLinesToCompareWithFilters, File newPDFPath) throws IOException {
-        //change the actual pdf to the format of expected pdf, in order to see if there is new change , if not, pass
-        //Loading an existing document
+    private int findTextLinesByFilter(List<KPDFTextInfo> filters, TextDifference textDifference) {
 
+        if ((null != filters) && (filters.size() != 1)) {
 
-        //Retrieving a page of the PDF Document
-        PDPage page = pddDocument.getPage(0);
-
-        //Instantiating the PDPageContentStream class
-        PDPageContentStream contentStream = new PDPageContentStream(pddDocument, page, true, true);
-
-
-        //Setting the non stroking color
-
-        contentStream.setNonStrokingColor(Color.white);
-
-        for (KFilter filter : filtersToExcludeRectangles) {
-            if ((contentLinesToCompareWithFilters != null) || (contentLinesToCompareWithFilters.size() != 0)) {
-                //locate the rectangle by meaning full text content, font size and only a few postion information
-                if (!filter.getIndex().equals("")) {
-                    int x = (int) contentLinesToCompareWithFilters.get(Integer.valueOf(filter.getIndex())).getStartX();
-                    int y = (int) contentLinesToCompareWithFilters.get(Integer.valueOf(filter.getIndex())).getStartY();
-                    int width = (int) contentLinesToCompareWithFilters.get(Integer.valueOf(filter.getIndex())).getWidth();
-                    int height = (int) contentLinesToCompareWithFilters.get(Integer.valueOf(filter.getIndex())).getHeight();
-                    contentStream.addRect(x - 1, y - 1, width + 3, height + 2);//9091335
-                    // break;
+            for (int i = 0; i < filters.size(); i++) {
+                boolean found = true;
+                if ((null != filters.get(i).getFont()) && !textDifference.expected.getFont().equals(filters.get(i).getFont())) {
+                    found = false;
+                }
+                if ((filters.get(i).getFontSize() >= 0) && (textDifference.expected.getFontSize() != (filters.get(i).getFontSize()))) {
+                    found = false;
+                }
+                if ((null != filters.get(i).getValue()) && !textDifference.expected.getValue().equals(filters.get(i).getValue())) {
+                    found = false;
+                }
+                if ((filters.get(i).getStartX() >= 0) && (textDifference.expected.getStartX() != (filters.get(i).getStartX()))) {
+                    found = false;
+                }
+                if ((filters.get(i).getStartY() >= 0) && (textDifference.expected.getStartY() != (filters.get(i).getStartY()))) {
+                    found = false;
                 }
 
-                for (KPDFTextInfo pdfTextInfo : contentLinesToCompareWithFilters) {
-                    boolean found = true;
-                    if ((!filter.getValue().equals("")) && (!pdfTextInfo.getValue().contains(filter.getValue()))) {
-                        found = false;
-                    }
-                    if ((!filter.getFont().equals("")) && (!filter.getFont().equals(pdfTextInfo.getFont()))) {
-                        found = false;
-
-                    }
-                    if ((!filter.getFontSize().equals("")) && (!filter.getFontSize().equals(String.valueOf(pdfTextInfo.getFontSize())))) {
-                        found = false;
-
-                    }
-                    if ((!filter.getStartX().equals("")) && (!filter.getStartX().equals(String.valueOf(pdfTextInfo.getStartX())))) {
-                        found = false;
-
-                    }
-                    if ((!filter.getStartY().equals("")) && (!filter.getStartY().equals(String.valueOf(pdfTextInfo.getStartY())))) {
-                        found = false;
-
-                    }
-                    if (found) {
-                        int x = (int) pdfTextInfo.getStartX();
-                        int y = (int) pdfTextInfo.getStartY();
-                        int width = (int) pdfTextInfo.getWidth();
-                        int height = (int) pdfTextInfo.getHeight();
-                        contentStream.addRect(x - 1, y - 1, width + 3, height + 2);//9091335
-                    }
-
+                if (found) {
+                    return i;
                 }
-            } else {//locate the rectangle area exclusively by postion information
-                int x = Integer.valueOf(filter.getStartX());
-                int y = Integer.valueOf(filter.getStartY());
-                int width = Integer.valueOf(filter.getWidth());
-                int height = Integer.valueOf(filter.getHeight());
-                contentStream.addRect(x, y, width, height);
             }
         }
-
-        //Drawing a rectangle
-        contentStream.fill();
-
-        System.out.println("rectangle added");
-
-        //Closing the ContentStream object
-        contentStream.close();
-
-        //Saving the document
-        pddDocument.save(newPDFPath);
-
-
+        return -1;
     }
 
+    private List<TextDifference> logDifference(String message, List<TextDifference> textDifferences, Integer index, String reason) {
+
+        //log the futher-analysed result from already-kwown textDifferences to check if they are tolerated, and if not, will log the reason/resultTextCompare/Index
+        //if index is not provided, will assuming an adding of resultTextCompare so the new textDifferences will be appended directly
+        if (null == index) {
+            //only print the log info
+            index = textDifferences.size() - 1;
+
+        } else {
+            //otherwise, add
+            TextDifference textDifference = new TextDifference();
+            textDifference.expected = textDifferences.get(index).expected;
+            textDifference.actual = textDifferences.get(index).actual;
+            textDifference.reason = reason;
+            textDifferences.add(textDifference);
+        }
+
+        logger.info(message);
+        logger.info("value: " + "|" + textDifferences.get(index).expected.getValue() + "|" + textDifferences.get(index).actual.getValue() + "|");
+        logger.info("x " + "|" + textDifferences.get(index).expected.getStartX() + " | " + textDifferences.get(index).actual.getStartX());
+        logger.info("y " + "|" + textDifferences.get(index).expected.getStartY() + " | " + textDifferences.get(index).actual.getStartY());
+        logger.info("width " + "|" + textDifferences.get(index).expected.getWidth() + " | " + textDifferences.get(index).actual.getWidth());
+        logger.info("height " + "|" + textDifferences.get(index).expected.getHeight() + " | " + textDifferences.get(index).actual.getHeight());
+        logger.info("font " + "|" + textDifferences.get(index).expected.getFont() + " | " + textDifferences.get(index).actual.getFont());
+        logger.info("font size : " + "|" + textDifferences.get(index).expected.getFontSize() + " | " + textDifferences.get(index).actual.getFontSize());
+        logger.info("getStrokingColor : " + "|" + textDifferences.get(index).expected.getStrokingColor() + " | " + textDifferences.get(index).actual.getStrokingColor());
+        logger.info("getNonStrokingColor : " + "|" + textDifferences.get(index).expected.getNonStrokingColor() + " | " + textDifferences.get(index).actual.getNonStrokingColor());
+        logger.info("getRenderingMode : " + "|" + textDifferences.get(index).expected.getRenderingMode() + " | " + textDifferences.get(index).actual.getRenderingMode());
+
+
+        return textDifferences;
+    }
+
+    private List<TextDifference> logDifference(String message, List<TextDifference> textDifferencesSource, Integer index, String reason, List<TextDifference> textDifferencesDest) {
+
+        //log the futher-analysed result from already-kwown textDifferences to check if they are tolerated, and if not, will log the reason/resultTextCompare/Index
+        //if index is not provided, will assuming an adding of resultTextCompare so the new textDifferences will be appended directly
+        if (null == index) {
+            //only print the log info
+            index = textDifferencesSource.size() - 1;
+
+        } else {
+            //otherwise, add
+            TextDifference textDifference = new TextDifference();
+            textDifference.expected = textDifferencesSource.get(index).expected;
+            textDifference.actual = textDifferencesSource.get(index).actual;
+            textDifference.reason = reason;
+            textDifferencesDest.add(textDifference);
+        }
+
+        logger.info(message);
+        logger.info("value: " + "|" + textDifferencesSource.get(index).expected.getValue() + "|" + textDifferencesSource.get(index).actual.getValue() + "|");
+        logger.info("x " + "|" + textDifferencesSource.get(index).expected.getStartX() + " | " + textDifferencesSource.get(index).actual.getStartX());
+        logger.info("y " + "|" + textDifferencesSource.get(index).expected.getStartY() + " | " + textDifferencesSource.get(index).actual.getStartY());
+        logger.info("width " + "|" + textDifferencesSource.get(index).expected.getWidth() + " | " + textDifferencesSource.get(index).actual.getWidth());
+        logger.info("height " + "|" + textDifferencesSource.get(index).expected.getHeight() + " | " + textDifferencesSource.get(index).actual.getHeight());
+        logger.info("font " + "|" + textDifferencesSource.get(index).expected.getFont() + " | " + textDifferencesSource.get(index).actual.getFont());
+        logger.info("font size : " + "|" + textDifferencesSource.get(index).expected.getFontSize() + " | " + textDifferencesSource.get(index).actual.getFontSize());
+        logger.info("getStrokingColor : " + "|" + textDifferencesSource.get(index).expected.getStrokingColor() + " | " + textDifferencesSource.get(index).actual.getStrokingColor());
+        logger.info("getNonStrokingColor : " + "|" + textDifferencesSource.get(index).expected.getNonStrokingColor() + " | " + textDifferencesSource.get(index).actual.getNonStrokingColor());
+        logger.info("getRenderingMode : " + "|" + textDifferencesSource.get(index).expected.getRenderingMode() + " | " + textDifferencesSource.get(index).actual.getRenderingMode());
+
+
+        return textDifferencesDest;
+    }
+
+    private List<TextDifference> logDifference(String message, List<TextDifference> textDifferences, TextDifference textDifference) throws IOException {
+
+
+        textDifferences.add(textDifference);
+        int index = textDifferences.size() - 1;
+
+
+        logger.info(message);
+        logger.info("value: " + "|" + textDifferences.get(index).expected.getValue() + "|" + textDifferences.get(index).actual.getValue() + "|");
+        logger.info("x " + "|" + textDifferences.get(index).expected.getStartX() + " | " + textDifferences.get(index).actual.getStartX());
+        logger.info("y " + "|" + textDifferences.get(index).expected.getStartY() + " | " + textDifferences.get(index).actual.getStartY());
+        logger.info("width " + "|" + textDifferences.get(index).expected.getWidth() + " | " + textDifferences.get(index).actual.getWidth());
+        logger.info("height " + "|" + textDifferences.get(index).expected.getHeight() + " | " + textDifferences.get(index).actual.getHeight());
+        logger.info("font " + "|" + textDifferences.get(index).expected.getFont() + " | " + textDifferences.get(index).actual.getFont());
+        logger.info("font size : " + "|" + textDifferences.get(index).expected.getFontSize() + " | " + textDifferences.get(index).actual.getFontSize());
+
+        logger.info("expected: ");
+        for (Map.Entry<Integer, GraphicsState> entry : textDifferences.get(index).expected.getGraphicsStateHashMap().entrySet()) {
+            logger.info("till " + entry.getKey() + " :" + "getRenderingMode : " + entry.getValue().getRenderingMode() + " getNonStrokingColor: " + entry.getValue().getNonStrokingColor().toRGB() + " geStrokingColor: " + entry.getValue().getStrokingColor().toRGB());
+        }
+        logger.info("actual: ");
+        for (Map.Entry<Integer, GraphicsState> entry : textDifferences.get(index).actual.getGraphicsStateHashMap().entrySet()) {
+            logger.info("till " + entry.getKey() + " :" + "getRenderingMode : " + entry.getValue().getRenderingMode() + " getNonStrokingColor: " + entry.getValue().getNonStrokingColor().toRGB() + " geStrokingColor: " + entry.getValue().getStrokingColor().toRGB());
+        }
+
+        return textDifferences;
+    }
 
 }
+

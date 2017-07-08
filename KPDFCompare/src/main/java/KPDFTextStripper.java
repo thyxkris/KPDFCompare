@@ -14,9 +14,9 @@ import java.util.Map;
 
 public class KPDFTextStripper extends PDFTextStripper {
     private List<KPDFTextInfo> pdfTextInfos = new ArrayList<KPDFTextInfo>();
-    private List<KFilter> filters = new ArrayList<KFilter>();
-    private Map<GraphicsState, String> graphicsStates = new HashMap<GraphicsState, String>();
+    private List<GraphicsState> graphicsStateList = new ArrayList<GraphicsState>();
     private PDDocument pdDoc;
+    private int cursor = 0;
 
     public KPDFTextStripper() throws IOException {
         addOperator(new SetStrokingColorSpace());
@@ -33,23 +33,23 @@ public class KPDFTextStripper extends PDFTextStripper {
         addOperator(new SetNonStrokingColorN());
     }
 
-    protected int findTextLinesByFilter(KFilter filter) {
+    protected int findTextLinesByFilter(KPDFTextInfo filter) {
 
         for (int i = 0; i < getPdfTextInfos().size(); i++) {
             boolean found = true;
             if ((null != filter.getFont()) && !getPdfTextInfos().get(i).getFont().equals(filter.getFont())) {
                 found = false;
             }
-            if ((null != filter.getFontSize()) && !(String.valueOf(getPdfTextInfos().get(i).getFontSize()).equals(filter.getFontSize()))) {
+            if (!(getPdfTextInfos().get(i).getFontSize() == filter.getFontSize())) {
                 found = false;
             }
             if ((null != filter.getValue()) && !getPdfTextInfos().get(i).getValue().equals(filter.getValue())) {
                 found = false;
             }
-            if ((null != filter.getStartX()) && !(String.valueOf(getPdfTextInfos().get(i).getStartX()).equals(filter.getStartX()))) {
+            if (!(String.valueOf(getPdfTextInfos().get(i).getStartX()).equals(filter.getStartX()))) {
                 found = false;
             }
-            if ((null != filter.getStartY()) && !(String.valueOf(getPdfTextInfos().get(i).getStartY()).equals(filter.getStartY()))) {
+            if (!(String.valueOf(getPdfTextInfos().get(i).getStartY()).equals(filter.getStartY()))) {
                 found = false;
             }
 
@@ -60,28 +60,12 @@ public class KPDFTextStripper extends PDFTextStripper {
         return -1;
     }
 
-    public Map<GraphicsState, String> getGraphicsStates() {
-        return graphicsStates;
-    }
-
-    public void setGraphicsStates(Map<GraphicsState, String> graphicsStates) {
-        this.graphicsStates = graphicsStates;
-    }
-
     public List<KPDFTextInfo> getPdfTextInfos() {
         return pdfTextInfos.subList(0, pdfTextInfos.size());
     }
 
     public void setPdfTextInfos(List<KPDFTextInfo> pdfTextInfos) {
         this.pdfTextInfos = pdfTextInfos;
-    }
-
-    public List<KFilter> getFilters() {
-        return filters;
-    }
-
-    public void setFilters(List<KFilter> filters) {
-        this.filters = filters;
     }
 
     public PDDocument getPdDoc() {
@@ -100,9 +84,9 @@ public class KPDFTextStripper extends PDFTextStripper {
 
     @Override
     protected void writeLineSeparator() throws IOException {
-        //  startOfLine = true;
         super.writeLineSeparator();
     }
+
 
     @Override
     protected void writeString(String text, List<TextPosition> textPositions) throws IOException {
@@ -111,49 +95,49 @@ public class KPDFTextStripper extends PDFTextStripper {
         float height = textPositions.get(0).getFontSizeInPt();
         float width = 0;
         float startX = textPositions.get(0).getTextMatrix().getTranslateX();
-
-        writeString(String.format("[Font:%s]", textPositions.get(0).getFont()));
         pti.setFont(textPositions.get(0).getFont().toString());
-        writeString(String.format("[FontSize:%s]", textPositions.get(0).getFontSize()));
         pti.setFontSize(textPositions.get(0).getFontSize());
         float startY = textPositions.get(0).getTextMatrix().getTranslateY();
-
-
         for (TextPosition textPosition : textPositions) {
-
-
             if (startX > textPosition.getTextMatrix().getTranslateX()) {
                 startX = textPosition.getTextMatrix().getTranslateX();
             }
-
             if (startY > textPosition.getTextMatrix().getTranslateY()) {
                 startY = textPosition.getTextMatrix().getTranslateY();
             }
-
             if (height < textPosition.getFontSizeInPt()) {
                 height = textPosition.getFontSizeInPt();
             }
             width = width + textPosition.getWidth();
         }
-        writeString(String.format("[width:%s]", width));
         pti.setWidth(width);
-        writeString(String.format("[height:%s]", height));
         pti.setHeight(height);
-        writeString(String.format("[startX:%s]", startX));
         pti.setStartX(startX);
-        writeString(String.format("[startY:%s]", startY));
         pti.setStartY(startY);
-        PDColor strokingColor = getGraphicsState().getStrokingColor();
-        PDColor nonStrokingColor = getGraphicsState().getNonStrokingColor();
-        RenderingMode renderingMode = getGraphicsState().getTextState().getRenderingMode();
-
-        //writeString(String.format("[%s]", firstProsition.getTextMatrix()));
         pti.setValue(text);
-        pti.setNonStrokingColor(nonStrokingColor);
-        pti.setStrokingColor(strokingColor);
-        pti.setRenderingMode(renderingMode);
+
+        pti.setPageNumber(this.getCurrentPageNo());
+
+
+        GraphicsState currentGS = new GraphicsState();
+        GraphicsState lastGS = null;
+        for (int i = 0; i < textPositions.size(); i++) {
+            cursor++;
+
+            currentGS = this.getGraphicsStateList().get(cursor - 1);
+            if ((lastGS == null) || (currentGS == null) || (!lastGS.equals(currentGS))) {
+                pti.setGraphicsStateHashMap(i, currentGS);
+                if (i > 0) {
+                    System.out.println(text);
+                    System.out.println(i);
+                }
+
+            }
+            lastGS = currentGS;
+        }
+
         pdfTextInfos.add(pti);
-        //    super.writeString(text, textPositions);
+
     }
 
 
@@ -164,40 +148,21 @@ public class KPDFTextStripper extends PDFTextStripper {
 
         PDColor strokingColor = getGraphicsState().getStrokingColor();
         PDColor nonStrokingColor = getGraphicsState().getNonStrokingColor();
-        String unicode = text.getUnicode();
         RenderingMode renderingMode = getGraphicsState().getTextState().getRenderingMode();
-//            System.out.println("Unicode:            " + unicode);
-//            System.out.println("Rendering mode:     " + renderingMode);
-//            System.out.println("Stroking color:     " + strokingColor);
-//            System.out.println("Non-Stroking color: " + nonStrokingColor);
-//            System.out.println();
 
         GraphicsState graphicsState = new GraphicsState();
-        try {
-            graphicsState.setNonStrokingColor(String.valueOf(nonStrokingColor.toRGB()));
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        graphicsState.setRenderingMode(renderingMode.name());
-        try {
-            graphicsState.setStrokingColor(String.valueOf(strokingColor.toRGB()));
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        //  graphicsState.setUnicode(unicode);
-
-        if ((graphicsStates == null) || (graphicsStates.size() == 0) || !graphicsStates.containsKey(graphicsState)) {
-            graphicsStates.put(graphicsState, text.toString());
-        } else {
-            //check if exists
+        graphicsState.setNonStrokingColor(nonStrokingColor);
+        graphicsState.setRenderingMode(renderingMode);
+        graphicsState.setStrokingColor(strokingColor);
+        graphicsState.setValue(text.toString());
+        //debug
+        graphicsState.setValue(text.getUnicode());
+        graphicsStateList.add(graphicsState);
 
 
-            String s = graphicsStates.get(graphicsState);
-            graphicsStates.put(graphicsState, s + text.toString());
-
-        }
-        // See the PrintTextLocations for more attributes
     }
 
-
+    public List<GraphicsState> getGraphicsStateList() {
+        return graphicsStateList;
+    }
 }

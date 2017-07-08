@@ -1,28 +1,32 @@
 
 import org.apache.commons.lang.builder.EqualsBuilder;
 import org.apache.commons.lang.builder.HashCodeBuilder;
+import org.apache.pdfbox.pdmodel.graphics.color.PDColor;
+import org.apache.pdfbox.pdmodel.graphics.state.RenderingMode;
+
+import java.io.IOException;
 
 
 public class GraphicsState {
-    private String strokingColor = "";
-    private String nonStrokingColor = "";
+    private PDColor strokingColor = null;
+    private PDColor nonStrokingColor = null;
     private String unicode = "";
-    private String renderingMode = "";
+    private RenderingMode renderingMode = null;
     private String value;
 
-    public String getStrokingColor() {
+    public PDColor getStrokingColor() {
         return strokingColor;
     }
 
-    public void setStrokingColor(String strokingColor) {
+    public void setStrokingColor(PDColor strokingColor) {
         this.strokingColor = strokingColor;
     }
 
-    public String getNonStrokingColor() {
+    public PDColor getNonStrokingColor() {
         return nonStrokingColor;
     }
 
-    public void setNonStrokingColor(String nonStrokingColor) {
+    public void setNonStrokingColor(PDColor nonStrokingColor) {
         this.nonStrokingColor = nonStrokingColor;
     }
 
@@ -34,11 +38,11 @@ public class GraphicsState {
         this.unicode = unicode;
     }
 
-    public String getRenderingMode() {
+    public RenderingMode getRenderingMode() {
         return renderingMode;
     }
 
-    public void setRenderingMode(String renderingMode) {
+    public void setRenderingMode(RenderingMode renderingMode) {
         this.renderingMode = renderingMode;
     }
 
@@ -54,9 +58,9 @@ public class GraphicsState {
     public int hashCode() {
         return new HashCodeBuilder(17, 31). // two randomly chosen prime numbers
                 // if deriving: appendSuper(super.hashCode()).
-                        append(strokingColor).
-                        append(nonStrokingColor).
-                        append(renderingMode).
+                        append(getNonStrokingColor()).
+                        append(getStrokingColor()).
+                        append(getRenderingMode()).
                         toHashCode();
     }
 
@@ -68,11 +72,15 @@ public class GraphicsState {
             return true;
 
         GraphicsState rhs = (GraphicsState) obj;
-        return new EqualsBuilder().
-                // if deriving: appendSuper(super.equals(obj)).
-                        append(strokingColor, rhs.strokingColor).
-                        append(nonStrokingColor, rhs.nonStrokingColor).
-                        append(renderingMode, rhs.renderingMode).
-                        isEquals();
+        try {
+            return new EqualsBuilder().
+                    append(getRenderingMode().toString(), rhs.getRenderingMode().toString()).
+                    append(getStrokingColor().toRGB(), rhs.getStrokingColor().toRGB()).
+                    append(getNonStrokingColor().toRGB(), rhs.getNonStrokingColor().toRGB()).
+                    isEquals();
+        } catch (IOException e) {
+            e.printStackTrace();
+            return false;
+        }
     }
 }
