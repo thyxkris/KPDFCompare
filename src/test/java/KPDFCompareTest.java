@@ -1,3 +1,6 @@
+import kpdfCompare.ConfigHelper;
+import kpdfCompare.KPDFCompare;
+import kpdfCompare.KPDFTextInfo;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Ignore;
@@ -190,7 +193,7 @@ public class KPDFCompareTest {
     public void compareTextContentsWhe2DifferencesWithFiltersNoFilterOnDifference() throws Exception {
 
         String jsonStringWithPartlyReplacementExceptContactName = "{\"filter\":[{\"value\":\"9104024\",\"FontSize\":\"15.0\",\"name\":\"bookingNumber\",\"replacement\":\"9104025\"},{\"value\":\"Itinerary issued: Monday 26 June 2017\",\"name\":\"issuedDate\",\"replacement\":\"Itinerary issued: Monday 27 June 2017\"},{\"value\":\"Airline Reference: VU3X9V\",\"Font\":\"PDType1Font Helvetica-Bold\",\"name\":\"airlineReference\",\"replacement\":\"Airline Reference: Vu4X9V\"},{\"value\":\"Agent Reference: 9XM07A\",\"Font\":\"PDType1Font Helvetica\",\"name\":\"agentReference\",\"replacement\":\"Agent Reference: 9xM07A\"},{\"value\":\"Monday 3 July 2017\",\"startX\":\"232.46\",\"name\":\"departDate\",\"replacement\":\"Monday 3 July 2017\"},{\"value\":\"Monday 3 July 2017\",\"startX\":\"359.29\",\"name\":\"arrivalDate\",\"replacement\":\"Monday 4 July 2017\"},{\"value\":\"9104024\",\"FontSize\":\"19.5\",\"name\":\"bookingNumber\",\"replacement\":\"9104025\"},{\"value\":\"Flight No: QF501\",\"name\":\"flightNo\",\"replacement\":\"Flight No: QF502\"},{\"value\":\"6:00AM\",\"name\":\"departTime\"},{\"value\":\"7:35AM\",\"name\":\"arrivalTime\",\"replacement\":\"7:45AM\"}, {\"value\":\"Qantas\",\"name\":\"flightBrand\"},{\"value\":\"DOMESTIC - Terminal 3\",\"name\":\"arrivalTerminal\"}]}";
-       /* List<TextDifference> textDifferences = kpdfCompare.findAllDifferencesInTexts(kpdfTextStripper, kpdfTextStripper1);
+       /* List<kpdfCompare.TextDifference> textDifferences = kpdfCompare.findAllDifferencesInTexts(kpdfTextStripper, kpdfTextStripper1);
         Integer countNOToleranceDifference = textDifferences.size();//
         textDifferences = kpdfCompare.processDifferencesInTextContentsWithExpectations(textDifferences, kpdfCompare.generateFilters(jsonStringWithPartlyReplacementExceptContactName));
 
@@ -207,14 +210,14 @@ public class KPDFCompareTest {
     public void compareTextContentsWhenNoDifferencesInStrokingColorRenderingMode() throws Exception {
         String jsonStringWithPartlyReplacementExceptContactName = "{\"filter\":[{\"value\":\"9104024\",\"FontSize\":\"15.0\",\"name\":\"bookingNumber\",\"replacement\":\"9104025\"},{\"value\":\"Itinerary issued: Monday 26 June 2017\",\"name\":\"issuedDate\",\"replacement\":\"Itinerary issued: Monday 27 June 2017\"},{\"value\":\"Airline Reference: VU3X9V\",\"Font\":\"PDType1Font Helvetica-Bold\",\"name\":\"airlineReference\",\"replacement\":\"Airline Reference: Vu4X9V\"},{\"value\":\"Agent Reference: 9XM07A\",\"Font\":\"PDType1Font Helvetica\",\"name\":\"agentReference\",\"replacement\":\"Agent Reference: 9xM07A\"},{\"value\":\"Monday 3 July 2017\",\"startX\":\"232.46\",\"name\":\"departDate\",\"replacement\":\"Monday 3 July 2017\"},{\"value\":\"Monday 3 July 2017\",\"startX\":\"359.29\",\"name\":\"arrivalDate\",\"replacement\":\"Monday 4 July 2017\"},{\"value\":\"9104024\",\"FontSize\":\"19.5\",\"name\":\"bookingNumber\",\"replacement\":\"9104025\"},{\"value\":\"Flight No: QF501\",\"name\":\"flightNo\",\"replacement\":\"Flight No: QF502\"},{\"value\":\"6:00AM\",\"name\":\"departTime\"},{\"value\":\"7:35AM\",\"name\":\"arrivalTime\",\"replacement\":\"7:45AM\"}, {\"value\":\"Qantas\",\"name\":\"flightBrand\"},{\"value\":\"DOMESTIC - Terminal 3\",\"name\":\"arrivalTerminal\"}]}";
 
-/*        PDDocument pdDocument3 = kpdfCompare.getPDDocument(ConfigHelper.getTestResourcesFolderPath() + File.separator + "test3.pdf");
-        PDDocument pdDocument4 = kpdfCompare.getPDDocument(ConfigHelper.getTestResourcesFolderPath() + File.separator + "test4.pdf");
-        KPDFTextStripper kpdfTextStripper3 = new KPDFTextStripper();
+/*        PDDocument pdDocument3 = kpdfCompare.getPDDocument(kpdfCompare.ConfigHelper.getTestResourcesFolderPath() + File.separator + "test3.pdf");
+        PDDocument pdDocument4 = kpdfCompare.getPDDocument(kpdfCompare.ConfigHelper.getTestResourcesFolderPath() + File.separator + "test4.pdf");
+        kpdfCompare.KPDFTextStripper kpdfTextStripper3 = new kpdfCompare.KPDFTextStripper();
         kpdfTextStripper3.getText(pdDocument3);
-        KPDFTextStripper kpdfTextStripper4 = new KPDFTextStripper();
+        kpdfCompare.KPDFTextStripper kpdfTextStripper4 = new kpdfCompare.KPDFTextStripper();
         kpdfTextStripper4.getText(pdDocument4);
        // kpdfTextStripper.getText(pdDocument);
-        List<TextDifference> textDifferences = kpdfCompare.findDifferencesInColorRenderingMode(kpdfTextStripper3, kpdfTextStripper4);
+        List<kpdfCompare.TextDifference> textDifferences = kpdfCompare.findDifferencesInColorRenderingMode(kpdfTextStripper3, kpdfTextStripper4);
 
         assertEquals(0, textDifferences.size());// - countNOToleranceDifference);*/
 
@@ -226,7 +229,7 @@ public class KPDFCompareTest {
     @Test
     public void compareTextContentsWhen1DifferencesInStrokingColorRenderingMode() throws Exception {
         String jsonStringWithPartlyReplacementExceptContactName = "{\"filter\":[{\"value\":\"9104024\",\"FontSize\":\"15.0\",\"name\":\"bookingNumber\",\"replacement\":\"9104025\"},{\"value\":\"Itinerary issued: Monday 26 June 2017\",\"name\":\"issuedDate\",\"replacement\":\"Itinerary issued: Monday 27 June 2017\"},{\"value\":\"Airline Reference: VU3X9V\",\"Font\":\"PDType1Font Helvetica-Bold\",\"name\":\"airlineReference\",\"replacement\":\"Airline Reference: Vu4X9V\"},{\"value\":\"Agent Reference: 9XM07A\",\"Font\":\"PDType1Font Helvetica\",\"name\":\"agentReference\",\"replacement\":\"Agent Reference: 9xM07A\"},{\"value\":\"Monday 3 July 2017\",\"startX\":\"232.46\",\"name\":\"departDate\",\"replacement\":\"Monday 3 July 2017\"},{\"value\":\"Monday 3 July 2017\",\"startX\":\"359.29\",\"name\":\"arrivalDate\",\"replacement\":\"Monday 4 July 2017\"},{\"value\":\"9104024\",\"FontSize\":\"19.5\",\"name\":\"bookingNumber\",\"replacement\":\"9104025\"},{\"value\":\"Flight No: QF501\",\"name\":\"flightNo\",\"replacement\":\"Flight No: QF502\"},{\"value\":\"6:00AM\",\"name\":\"departTime\"},{\"value\":\"7:35AM\",\"name\":\"arrivalTime\",\"replacement\":\"7:45AM\"}, {\"value\":\"Qantas\",\"name\":\"flightBrand\"},{\"value\":\"DOMESTIC - Terminal 3\",\"name\":\"arrivalTerminal\"}]}";
-//        List<TextDifference> textDifferences = kpdfCompare.findDifferencesInColorRenderingMode(kpdfTextStripper, kpdfTextStripperColor);
+//        List<kpdfCompare.TextDifference> textDifferences = kpdfCompare.findDifferencesInColorRenderingMode(kpdfTextStripper, kpdfTextStripperColor);
 //
 //        assertEquals(1, textDifferences.size());// - countNOToleranceDifference);
 
@@ -248,8 +251,7 @@ public class KPDFCompareTest {
                 .processDifferencesInTextContentsWithExpectations()
                 .processDifferencesInCoordinateWithTolerance()
                 .findDifferencesInColorRenderingMode()
-                .processDifferencesInDeviationWithTolerance()
-        ;
+                .processDifferencesInDeviationWithTolerance()    ;
 
         assertEquals(0, kpdfCompare.getTextDifferencesInColorRenderingMode().size());
         assertEquals(0, kpdfCompare.getTextDifferencesInCoordinateAlignment().size());
@@ -262,21 +264,21 @@ public class KPDFCompareTest {
     public void comparePDFsVisually() throws Exception {
         kpdfCompare = new KPDFCompare(ConfigHelper.getTestResourcesFolderPath() + File.separator + "test3.pdf", ConfigHelper.getTestResourcesFolderPath() + File.separator + "test4.pdf");
 
-        assertTrue(kpdfCompare.findAllDifferencesInTexts().withTextDifferencesIgnored().findVisualDifferences());
+        assertTrue(kpdfCompare.findAllDifferencesInTexts().withTextDifferencesIgnored().isSameVisually());
     }
 
     @Test
     public void comparePDFsVisually1NOToleranceThenThereIsDifference() throws Exception {
         kpdfCompare = new KPDFCompare(ConfigHelper.getTestResourcesFolderPath() + File.separator + "test3.pdf", ConfigHelper.getTestResourcesFolderPath() + File.separator + "test4.pdf");
 
-        assertFalse(kpdfCompare.findAllDifferencesInTexts().findVisualDifferences());
+        assertFalse(kpdfCompare.findAllDifferencesInTexts().isSameVisually());
     }
 
     @Test
     public void pdfToImage() throws Exception {
         kpdfCompare = new KPDFCompare(ConfigHelper.getTestResourcesFolderPath() + File.separator + "test3.pdf", ConfigHelper.getTestResourcesFolderPath() + File.separator + "test4.pdf");
         assertEquals(kpdfCompare.pdfToImages(kpdfCompare.getPdDocActual(), ConfigHelper.getCurrentWorkingDir() + File.separator + "getPDDocActual").size(),2);
-      //  File file = new File(ConfigHelper.getCurrentWorkingDir() + File.separator + "getPDDocActual");
+      //  File file = new File(kpdfCompare.ConfigHelper.getCurrentWorkingDir() + File.separator + "getPDDocActual");
     }
 
 
@@ -322,7 +324,7 @@ public class KPDFCompareTest {
 
         kpdfCompare = new KPDFCompare(ConfigHelper.getTestResourcesFolderPath() + File.separator + "test.pdf", ConfigHelper.getTestResourcesFolderPath() + File.separator + "testColor.pdf");
 
-        kpdfCompare.findVisualDifferences();
+        kpdfCompare.isSameVisually();
     }
 
     @Test(expected = java.lang.IllegalStateException.class)

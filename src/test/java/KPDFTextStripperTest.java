@@ -1,10 +1,10 @@
+import kpdfCompare.KPDFTextInfo;
+import kpdfCompare.KPDFTextStripper;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.pdmodel.graphics.color.PDCalRGB;
 import org.apache.pdfbox.pdmodel.graphics.color.PDColor;
 import org.apache.pdfbox.pdmodel.graphics.color.PDColorSpace;
 import org.apache.pdfbox.pdmodel.graphics.state.RenderingMode;
-import org.apache.pdfbox.text.TextPosition;
-import org.apache.pdfbox.util.Matrix;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -12,7 +12,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.apache.pdfbox.pdmodel.font.PDType1Font.HELVETICA_BOLD;
 import static org.junit.Assert.assertEquals;
 
 /**
@@ -94,20 +93,20 @@ public class KPDFTextStripperTest {
         KPDFTextInfo.setValue("TestValue1");
         assertEquals(-1, kpdfTextStripper.findTextLinesByFilter(KPDFTextInfo));
         KPDFTextInfo.setValue("TestValue");
-//        assertEquals(-1, kpdfTextStripper.findTextLinesByFilter(KPDFTextInfo));
-//        KPDFTextInfo.setValue("TestValue");
-//        KPDFTextInfo.setFont("TestFont2");
-//        assertEquals(2, kpdfTextStripper.findTextLinesByFilter(KPDFTextInfo));
-//        KPDFTextInfo.setValue("TestValue");
-//        KPDFTextInfo.setFont(null);
-//        assertEquals(0, kpdfTextStripper.findTextLinesByFilter(KPDFTextInfo));
-//        KPDFTextInfo.setValue("TestValue");
-//        KPDFTextInfo.setFontSize("17");
-//        assertEquals(2, kpdfTextStripper.findTextLinesByFilter(KPDFTextInfo));
+//        assertEquals(-1, kpdfTextStripper.findTextLinesByFilter(kpdfCompare.KPDFTextInfo));
+//        kpdfCompare.KPDFTextInfo.setValue("TestValue");
+//        kpdfCompare.KPDFTextInfo.setFont("TestFont2");
+//        assertEquals(2, kpdfTextStripper.findTextLinesByFilter(kpdfCompare.KPDFTextInfo));
+//        kpdfCompare.KPDFTextInfo.setValue("TestValue");
+//        kpdfCompare.KPDFTextInfo.setFont(null);
+//        assertEquals(0, kpdfTextStripper.findTextLinesByFilter(kpdfCompare.KPDFTextInfo));
+//        kpdfCompare.KPDFTextInfo.setValue("TestValue");
+//        kpdfCompare.KPDFTextInfo.setFontSize("17");
+//        assertEquals(2, kpdfTextStripper.findTextLinesByFilter(kpdfCompare.KPDFTextInfo));
 //
-//        KPDFTextInfo.setValue("TestValue");
-//        KPDFTextInfo.setFontSize("17");
-//        assertEquals(2, kpdfTextStripper.findTextLinesByFilter(KPDFTextInfo));
+//        kpdfCompare.KPDFTextInfo.setValue("TestValue");
+//        kpdfCompare.KPDFTextInfo.setFontSize("17");
+//        assertEquals(2, kpdfTextStripper.findTextLinesByFilter(kpdfCompare.KPDFTextInfo));
     }
 
 
